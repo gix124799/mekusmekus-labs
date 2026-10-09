@@ -1,1 +1,1 @@
-{ "coin_pin": 17 }
+{ "coin_pin": 17, "pulse_value_pesos": 1, "pesos_per_minute": 1 }

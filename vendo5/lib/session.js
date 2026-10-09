@@ -57,7 +57,11 @@ function createSessionStore(filePath) {
     return due;
   }
 
-  return { load, save, addCredit, getSession, isActive, expireDue };
+  function all() {
+    return { ...sessions };
+  }
+
+  return { load, save, addCredit, getSession, isActive, expireDue, all };
 }
 
 module.exports = { createSessionStore };

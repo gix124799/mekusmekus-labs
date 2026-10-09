@@ -98,3 +98,12 @@ test('load with corrupt file starts empty, does not throw', () => {
   assert.doesNotThrow(() => s.load());
   assert.equal(s.getSession('anything'), undefined);
 });
+
+test('all() returns every active session keyed by mac', () => {
+  const s = createSessionStore(tmpFile());
+  s.load();
+  s.addCredit('m1', 1, 1, 0);
+  s.addCredit('m2', 1, 1, 0);
+  const snapshot = s.all();
+  assert.deepEqual(Object.keys(snapshot).sort(), ['m1', 'm2']);
+});

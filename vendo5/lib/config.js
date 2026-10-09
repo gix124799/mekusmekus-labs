@@ -3,7 +3,7 @@ const path = require('node:path');
 
 const REQUIRED = {
   network: ['lan_interface'],
-  vendo: ['coin_pin'],
+  vendo: ['coin_pin', 'pulse_value_pesos', 'pesos_per_minute'],
   licensing: ['mode'],
 };
 

@@ -7,7 +7,7 @@ const { loadConfig, getConfig } = require('../lib/config');
 
 const GOOD = {
   'network.json': { lan_interface: 'br-lan' },
-  'vendo.json': { coin_pin: 17 },
+  'vendo.json': { coin_pin: 17, pulse_value_pesos: 1, pesos_per_minute: 1 },
   'licensing.json': { mode: 'offline' },
 };
 function mk(files) {
