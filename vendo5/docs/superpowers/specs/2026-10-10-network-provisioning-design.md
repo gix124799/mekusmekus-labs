@@ -81,25 +81,33 @@ procd service) and `config/*.json` (the app's own config).
 
 ## Known shortcuts — verify on real hardware before deployment
 
-- **Interface names are placeholders** (`eth0_TODO_VERIFY` for WAN,
-  `eth1_TODO_VERIFY` for the USB-to-LAN adapter's LAN port). The owner
-  doesn't know the adapter's exact chipset; these are the common-case
-  guess. Fix is one line each in `network` and `vendo5-firewall.nft`
-  once confirmed via `ip link` on the real device. Not upgrading to
-  dynamic hotplug-based interface detection unless real deployment shows
-  interface names are unstable across boots/adapter swaps — that would
-  be solving a problem this single, fixed deployment doesn't have yet.
-- **nftables syntax validated only by manual review**, not by `nft -c`
-  — this sandbox has no `CAP_NET_ADMIN`/netlink access to run nft's own
-  check mode. **Must run `nft -c -f etc-overlay/etc/vendo5-firewall.nft`
-  on a real machine (or with `sudo`) before trusting it on a device.**
+- **Interface names (`eth0` for WAN, `eth1` for the USB-to-LAN
+  adapter's port) are best-guesses**, not confirmed on real hardware —
+  the owner doesn't know the adapter's exact chipset. Fix is one line
+  each in `network` and `vendo5-firewall.nft` once confirmed via
+  `ip link` on the real device. Not upgrading to dynamic hotplug-based
+  interface detection unless real deployment shows interface names are
+  unstable across boots/adapter swaps — that would be solving a problem
+  this single, fixed deployment doesn't have yet.
+- **nftables syntax: validated.** `sudo nft -c -f
+  etc-overlay/etc/vendo5-firewall.nft` ran clean (2026-10-10) against a
+  real nft binary — this is check mode against the kernel's own
+  nftables subsystem, not just a parser. Caught and fixed two real bugs
+  in the process: `dnat to ...` is ambiguous in an `inet`-family table
+  (needs `dnat ip to ...`), and the placeholder interface name
+  `eth0_TODO_VERIFY` exceeded Linux's 15-character interface-name limit
+  (`IFNAMSIZ`) — a placeholder that long could never have been valid
+  syntax regardless of wording, which is why real short names (`eth0`/
+  `eth1`) are used directly now, with the verification caveat kept in
+  comments/docs instead of the string itself.
 - **UCI syntax validated only by structural review** (balanced
   quotes/braces), not by the real `uci` tool, which isn't installed in
   this sandbox (OpenWrt-specific, not packaged for this dev machine).
-- **No on-device test has been run at all.** Everything above is
-  reasoned from nftables/OpenWrt documentation and the real WiFi5-Soft
-  reference material (`legacy/wifi5-soft/config/nginx.conf`), not
-  reproduced on hardware.
+- **Still not run on a real device at all** — `nft -c` confirms the
+  ruleset is syntactically and semantically loadable by nftables, not
+  that `eth0`/`eth1` are the actual interfaces on the real Orange Pi
+  One, or that the USB adapter's driver is present in the kernel.
+  That's the one remaining on-hardware check.
 
 ## Out of scope (still, per sub-project #2's spec)
 

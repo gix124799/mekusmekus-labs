@@ -20,13 +20,13 @@ config interface 'loopback'
 	option netmask '255.0.0.0'
 
 config interface 'wan'
-	option device 'eth0_TODO_VERIFY'
+	option device 'eth0'
 	option proto 'dhcp'
 
 config device
 	option type 'bridge'
 	option name 'br-lan'
-	list ports 'eth1_TODO_VERIFY'
+	list ports 'eth1'
 
 config interface 'lan'
 	option device 'br-lan'
