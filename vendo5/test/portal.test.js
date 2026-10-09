@@ -68,6 +68,24 @@ test('GET / always serves the real page shell with the real insert-coin button',
   server.close();
 });
 
+// Regression: the inline script called toastada.show(msg, type), but the
+// real toast.js (public/theme/js/toast.js) only exposes .success/.info/
+// .warning/.error -- no .show() at all. That threw inside the click
+// handler's success callback in a real browser, silently (no console in
+// our Node test runner), making the insert-coin button look broken even
+// though the network request itself went through.
+test('GET / does not call the nonexistent toastada.show (only real toast.js methods)', async () => {
+  const { server } = createServer({ session: fakeSession(false), arp: fakeArp('m1'), ratePesosPerMinute: 1 });
+  const port = await listen(server);
+  try {
+    const res = await request(port, 'GET', '/');
+    assert.doesNotMatch(res.body, /toastada\.show\(/);
+    assert.match(res.body, /toastada\.(success|info|warning|error)\(/);
+  } finally {
+    server.close();
+  }
+});
+
 test('GET / does not throw when the MAC is unresolved (arp returns null)', async () => {
   const { server } = createServer({ session: fakeSession(false), arp: fakeArp(null), ratePesosPerMinute: 1 });
   const port = await listen(server);

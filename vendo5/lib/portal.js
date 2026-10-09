@@ -85,7 +85,7 @@ var clientstatus = $('<div class="card" style="min-height:86px;margin-bottom:10p
 var creditbox = $('<div class="card" style="min-height:86px;"><div class="card-body" style="display:flex;padding:10px 20px;justify-content:space-around;"><div style="margin-right:20px;width:75%;display:grid;justify-content:center;padding-left:15px;"><div class="row" style="align-content:flex-end;"><div class="d-flex align-items-center align-self-start"><h3 class="mb-0 text-info" id="client-credit"></h3></div></div></div><div id="insert-btn-parent" style="display:grid;align-items:center;"><button id="client-insert-coin" class="btn btn-outline-warning btn-icon-text" style="height:auto;"><i class="mdi mdi-coin btn-icon-prepend mdi-48px"></i><span id="insert1" class="d-inline-block text-left blink" style="margin:auto;font-size:18px;font-weight:bold;">INSERT COIN</span></button></div></div></div>');
 $('#conntent').append(clientstatus).append(creditbox);
 $('#client-insert-coin').on('click', function () {
-  $.post('/api/pay-intent').done(function () { toastada.show('Insert your coin now.', 'info'); });
+  $.post('/api/pay-intent').done(function () { toastada.info('Insert your coin now.'); });
 });
 function poll() {
   $.getJSON('/api/status').done(function (s) {
