@@ -12,6 +12,14 @@ function fakeSession(active) {
 function fakeArp(mac) {
   return { ipToMac: () => mac };
 }
+function recordingArp(mac) {
+  const calls = [];
+  return { arp: { ipToMac: (ip) => { calls.push(ip); return mac; } }, calls };
+}
+function sequencedArp(macs) {
+  let i = 0;
+  return { ipToMac: () => macs[Math.min(i++, macs.length - 1)] };
+}
 
 function listen(server) {
   return new Promise((resolve) => server.listen(0, () => resolve(server.address().port)));
@@ -27,6 +35,16 @@ function request(port, method, path) {
     req.end();
   });
 }
+
+test('client IP is normalized before ARP lookup (IPv6-mapped IPv4 strips the ::ffff: prefix)', async () => {
+  const { arp, calls } = recordingArp('m1');
+  const { server } = createServer({ session: fakeSession(false), arp, ratePesosPerMinute: 1 });
+  const port = await listen(server);
+  await request(port, 'GET', '/');
+  server.close();
+  assert.ok(calls.length >= 1, 'arp.ipToMac was never called');
+  assert.ok(!calls[0].startsWith('::ffff:'), `expected a stripped IPv4, got ${calls[0]}`);
+});
 
 test('unpaid client gets the landing page on GET /', async () => {
   const { server } = createServer({ session: fakeSession(false), arp: fakeArp('m1'), ratePesosPerMinute: 1 });
@@ -55,15 +73,60 @@ test('unresolved MAC (arp returns null) is treated as unpaid, does not throw', a
   server.close();
 });
 
-test('POST /api/pay-intent records the pending payer, consumePendingPayer returns it once', async () => {
+test('POST /api/pay-intent records the pending payer; a single pulse consumes it', async () => {
   const { server, consumePendingPayer } = createServer({ session: fakeSession(false), arp: fakeArp('m1'), ratePesosPerMinute: 1 });
   const port = await listen(server);
   const res = await request(port, 'POST', '/api/pay-intent');
   assert.equal(res.status, 200);
   assert.deepEqual(JSON.parse(res.body), { ok: true });
   assert.equal(consumePendingPayer(), 'm1');
-  assert.equal(consumePendingPayer(), null); // consumed, not reusable
   server.close();
+});
+
+// Ruling (code-review fix pass): the plan's own Interfaces block for Task 4
+// said consumePendingPayer "clears it" on first use, but the plan's own
+// Review Focus #1 requires back-to-back coin pulses for the SAME payer to
+// both credit via top-up. Those two statements contradict each other; the
+// spec (binding authority) backs Review Focus #1, so consumePendingPayer
+// now "touches" (refreshes) the window on each successful pulse instead of
+// clearing it, and only a real TTL lapse (no further pulses) frees the slot.
+test('a second pulse for the same payer within TTL still finds the pending payer (supports back-to-back coins)', async () => {
+  const { server, consumePendingPayer } = createServer({ session: fakeSession(false), arp: fakeArp('m1'), ratePesosPerMinute: 1 });
+  const port = await listen(server);
+  try {
+    await request(port, 'POST', '/api/pay-intent');
+    assert.equal(consumePendingPayer(0), 'm1');
+    assert.equal(consumePendingPayer(5000), 'm1'); // second pulse, still within TTL of the first
+  } finally {
+    server.close();
+  }
+});
+
+test('the pending payer expires once the TTL truly elapses with no further pulses', async () => {
+  const { server, consumePendingPayer } = createServer({ session: fakeSession(false), arp: fakeArp('m1'), ratePesosPerMinute: 1 });
+  const port = await listen(server);
+  try {
+    await request(port, 'POST', '/api/pay-intent');
+    assert.equal(consumePendingPayer(0), 'm1');
+    assert.equal(consumePendingPayer(20000), null); // no pulse refreshed it; TTL (10s) lapsed
+  } finally {
+    server.close();
+  }
+});
+
+test('a different MAC cannot override an active pending payer within TTL', async () => {
+  const arp = sequencedArp(['m1', 'm2']);
+  const { server, consumePendingPayer } = createServer({ session: fakeSession(false), arp, ratePesosPerMinute: 1 });
+  const port = await listen(server);
+  try {
+    const res1 = await request(port, 'POST', '/api/pay-intent'); // resolves to m1
+    const res2 = await request(port, 'POST', '/api/pay-intent'); // resolves to m2, m1 still pending
+    assert.deepEqual(JSON.parse(res1.body), { ok: true });
+    assert.deepEqual(JSON.parse(res2.body), { ok: false });
+    assert.equal(consumePendingPayer(), 'm1');
+  } finally {
+    server.close();
+  }
 });
 
 test('consumePendingPayer returns null when none was set', async () => {

@@ -101,15 +101,35 @@ function serveThemeFile(urlPath, res) {
 function createServer({ session, arp, ratePesosPerMinute }) {
   let pendingPayer = null; // { mac, at }
 
+  // Ruling (code-review fix pass): don't clear on a successful consume —
+  // touch (refresh) the window instead, so back-to-back coin pulses for
+  // the same payer (plan's own Review Focus #1) keep finding them. Only
+  // an actual TTL lapse with no intervening pulse frees the slot.
   function consumePendingPayer(now = Date.now()) {
     if (!pendingPayer) return null;
     const { mac, at } = pendingPayer;
-    pendingPayer = null;
-    return now - at <= PAY_INTENT_TTL_MS ? mac : null;
+    if (now - at > PAY_INTENT_TTL_MS) {
+      pendingPayer = null;
+      return null;
+    }
+    pendingPayer = { mac, at: now };
+    return mac;
+  }
+
+  // A different MAC may not steal an already-active pending-payer slot;
+  // the same MAC always refreshes its own window.
+  function setPendingPayer(mac, now = Date.now()) {
+    if (pendingPayer && pendingPayer.mac !== mac && now - pendingPayer.at <= PAY_INTENT_TTL_MS) {
+      return false;
+    }
+    pendingPayer = { mac, at: now };
+    return true;
   }
 
   function clientMac(req) {
-    const ip = req.socket.remoteAddress;
+    // dual-stack server binds to '::' by default; real IPv4 clients arrive
+    // as '::ffff:a.b.c.d' and `ip neigh show` has no entry for that form.
+    const ip = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
     return arp.ipToMac(ip);
   }
 
@@ -128,9 +148,9 @@ function createServer({ session, arp, ratePesosPerMinute }) {
     }
 
     if (req.method === 'POST' && req.url === '/api/pay-intent') {
-      if (mac) pendingPayer = { mac, at: Date.now() };
+      const ok = mac ? setPendingPayer(mac) : false;
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true }));
+      res.end(JSON.stringify({ ok }));
       return;
     }
 
