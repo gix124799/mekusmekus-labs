@@ -102,11 +102,58 @@ setInterval(poll, 2000);
 </html>`;
 }
 
-// Preview only: the real admin ("nav") shell, verbatim structure, with its
-// own content left blank. No admin backend exists yet (deferred sub-project
-// per docs/superpowers/specs — login, auth, and every menu item's actual
-// data are future work). This route exists so the real UI can be seen now.
-function adminPage() {
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+function loginForm() {
+  return `<div id="admin-login-form" class="card" style="max-width:360px;margin:60px auto;">
+<div class="card-body">
+<h4 class="card-title">Admin Login</h4>
+<p id="login-error" class="text-danger" style="display:none;">Invalid username or password.</p>
+<div class="form-group"><label>Username</label><input id="login-username" class="form-control" type="text"></div>
+<div class="form-group"><label>Password</label><input id="login-password" class="form-control" type="password"></div>
+<button id="login-submit" class="btn btn-outline-warning">Login</button>
+</div>
+</div>
+<script>
+$('#login-submit').on('click', function () {
+  $.ajax({ url: '/admin/login', method: 'POST', contentType: 'application/json',
+    data: JSON.stringify({ username: $('#login-username').val(), password: $('#login-password').val() }) })
+    .done(function (r) { if (r.ok) location.reload(); else $('#login-error').show(); });
+});
+</script>`;
+}
+
+// Real session data (mac, credit, remaining time) from session.all() — this
+// is real device state, not a mock. Every other menu item (Eload, Vouchers,
+// PPPoE, Network, Sales, Logs) still has no backend; that's a future
+// sub-project, same as before.
+function dashboardContent(sessionsByMac, now = Date.now()) {
+  const rows = Object.values(sessionsByMac).map((s) => {
+    const remaining = Math.max(0, Math.round((s.expiresAt - now) / 1000));
+    return `<tr><td>${escapeHtml(s.mac)}</td><td>${s.creditPesos}</td><td>${remaining}s</td></tr>`;
+  }).join('');
+  return `<div class="card" style="margin-top:20px;">
+<div class="card-body">
+<h4 class="card-title">Active Sessions</h4>
+<table class="table"><thead><tr><th>MAC</th><th>Credit (&#8369;)</th><th>Remaining</th></tr></thead>
+<tbody id="sessions-tbody">${rows || '<tr><td colspan="3">No active sessions</td></tr>'}</tbody></table>
+<button id="logout-btn" class="btn btn-outline-danger">Logout</button>
+</div>
+</div>
+<script>
+$('#logout-btn').on('click', function () {
+  $.ajax({ url: '/admin/logout', method: 'POST' }).done(function () { location.reload(); });
+});
+</script>`;
+}
+
+// Real admin ("nav") shell, verbatim structure. Login is real (lib/admin.js
+// + config/admin.json); the dashboard shows real session data. Every other
+// menu item (Eload, Vouchers, PPPoE, Network, Sales, Logs) has no backend
+// yet — deferred to a future sub-project, same scope line as before.
+function adminPage(content) {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -150,10 +197,8 @@ function adminPage() {
 </div>
 </nav>
 <div class="main-panel">
-<div id="conntent" class="content-wrapper">
-<div class="card" style="margin-top:20px;"><div class="card-body"><h4>Admin preview</h4><p class="text-muted">This is a visual preview of the real WiFi5-Soft admin theme. No admin backend (login, data, actions) exists yet &mdash; deferred to a future sub-project.</p></div></div>
-</div>
-<footer class="footer"><div class="d-sm-flex justify-content-center justify-content-sm-between"><span class="text-muted">WiFi5-Soft admin preview</span></div></footer>
+<div id="conntent" class="content-wrapper">${content}</div>
+<footer class="footer"><div class="d-sm-flex justify-content-center justify-content-sm-between"><span class="text-muted">WiFi5-Soft admin</span></div></footer>
 </div>
 </div>
 </div>
@@ -162,6 +207,29 @@ function adminPage() {
 <script src="/theme/js/admin-misc.js"></script>
 </body>
 </html>`;
+}
+
+const ADMIN_COOKIE = 'vendo5_admin';
+
+function parseCookies(req) {
+  const header = req.headers.cookie || '';
+  const out = {};
+  for (const part of header.split(';')) {
+    const i = part.indexOf('=');
+    if (i === -1) continue;
+    out[part.slice(0, i).trim()] = part.slice(i + 1).trim();
+  }
+  return out;
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      try { resolve(JSON.parse(body || '{}')); } catch { resolve({}); }
+    });
+  });
 }
 
 function serveThemeFile(urlPath, res) {
@@ -178,7 +246,7 @@ function serveThemeFile(urlPath, res) {
   });
 }
 
-function createServer({ session, arp, ratePesosPerMinute }) {
+function createServer({ session, arp, ratePesosPerMinute, adminAuth }) {
   let pendingPayer = null; // { mac, at }
 
   // Ruling (code-review fix pass): don't clear on a successful consume —
@@ -227,9 +295,35 @@ function createServer({ session, arp, ratePesosPerMinute }) {
       return;
     }
 
+    const isAdminSession = () => adminAuth.verify(parseCookies(req)[ADMIN_COOKIE]);
+
     if (req.method === 'GET' && (req.url === '/admin' || req.url.startsWith('/admin?'))) {
       res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(adminPage());
+      res.end(adminPage(isAdminSession() ? dashboardContent(session.all()) : loginForm()));
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/admin/login') {
+      readJsonBody(req).then(({ username, password }) => {
+        const token = adminAuth.login(username, password);
+        if (token) res.setHeader('Set-Cookie', `${ADMIN_COOKIE}=${token}; HttpOnly; Path=/`);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: !!token }));
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/admin/logout') {
+      adminAuth.logout(parseCookies(req)[ADMIN_COOKIE]);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    if (req.method === 'GET' && req.url === '/admin/api/sessions') {
+      if (!isAdminSession()) { res.writeHead(401).end(); return; }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(session.all()));
       return;
     }
 

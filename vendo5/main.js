@@ -5,6 +5,7 @@ const { createSessionStore } = require('./lib/session');
 const { createFirewall } = require('./lib/firewall');
 const { createArp } = require('./lib/arp');
 const { createServer } = require('./lib/portal');
+const { createAdminAuth, hashPassword } = require('./lib/admin');
 const { version } = require('./package.json');
 
 const configDir = process.env.VENDO5_CONFIG_DIR || '/mnt/wifi5/vendo5-config';
@@ -28,6 +29,11 @@ process.on('SIGINT', shutdown);
 log('info', 'vendo5 started', { version, config: Object.keys(config) });
 
 const { coin_pin, pulse_value_pesos, pesos_per_minute } = config.vendo;
+
+const adminAuth = createAdminAuth({ username: config.admin.username, passwordHash: config.admin.password_hash });
+if (config.admin.password_hash === hashPassword('admin')) {
+  log('warn', 'admin is using the factory-default password; change config/admin.json before deployment');
+}
 
 const session = createSessionStore(sessionFile);
 session.load();
@@ -56,7 +62,7 @@ try {
   log('error', 'firewall sync failed at boot', { error: e.message });
 }
 
-const { server, consumePendingPayer } = createServer({ session, arp, ratePesosPerMinute: pesos_per_minute });
+const { server, consumePendingPayer } = createServer({ session, arp, ratePesosPerMinute: pesos_per_minute, adminAuth });
 server.listen(portalPort, () => {
   log('info', 'portal listening', { port: server.address().port });
 });

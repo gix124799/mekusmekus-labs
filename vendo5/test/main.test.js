@@ -150,3 +150,33 @@ test('a paid coin pulse credits the session, calls firewall allow, and persists 
   const saved = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
   assert.equal(saved[mac].creditPesos, 1);
 });
+
+// Caught a real bug: main.js passed config.admin straight to
+// createAdminAuth, but the config key is password_hash (snake_case,
+// matching the config-file convention) while lib/admin.js expects
+// passwordHash (camelCase) -- the mismatch meant every login silently
+// failed. Unit tests never caught it because they inject a fake
+// adminAuth; only an end-to-end run of the real main.js wiring does.
+test('admin login with the default config credentials actually works end to end', async () => {
+  const r = run({ VENDO5_CONFIG_DIR: tmpDir(), VENDO5_DEFAULTS_DIR: DEFAULTS, VENDO5_GPIO_BASE: fakeGpioBase(), VENDO5_PORTAL_PORT: '0' });
+  await new Promise((res) => r.p.stdout.once('data', res));
+  await new Promise((res) => setTimeout(res, 50)); // settle: first data chunk may be only "vendo5 started"
+  const portLine = /"port":(\d+)/.exec(r.out());
+  const port = Number(portLine[1]);
+
+  try {
+    const res = await new Promise((resolve, reject) => {
+      const req = http.request({ port, method: 'POST', path: '/admin/login', headers: { 'Content-Type': 'application/json' } }, (resp) => {
+        let body = '';
+        resp.on('data', (c) => { body += c; });
+        resp.on('end', () => resolve({ body }));
+      });
+      req.on('error', reject);
+      req.end(JSON.stringify({ username: 'admin', password: 'admin' }));
+    });
+    assert.deepEqual(JSON.parse(res.body), { ok: true });
+  } finally {
+    r.p.kill('SIGTERM');
+    await r.exited;
+  }
+});

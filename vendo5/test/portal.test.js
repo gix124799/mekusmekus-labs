@@ -24,16 +24,23 @@ function sequencedArp(macs) {
 function listen(server) {
   return new Promise((resolve) => server.listen(0, () => resolve(server.address().port)));
 }
-function request(port, method, path) {
+function request(port, method, path, { headers, body: reqBody } = {}) {
   return new Promise((resolve, reject) => {
-    const req = http.request({ port, method, path }, (res) => {
+    const req = http.request({ port, method, path, headers }, (res) => {
       let body = '';
       res.on('data', (c) => { body += c; });
-      res.on('end', () => resolve({ status: res.statusCode, body }));
+      res.on('end', () => resolve({ status: res.statusCode, body, headers: res.headers }));
     });
     req.on('error', reject);
-    req.end();
+    req.end(reqBody);
   });
+}
+function fakeAdminAuth(validToken) {
+  return {
+    login: (u, p) => (u === 'admin' && p === 'secret' ? validToken : null),
+    verify: (t) => t === validToken,
+    logout: () => {},
+  };
 }
 
 test('client IP is normalized before ARP lookup (IPv6-mapped IPv4 strips the ::ffff: prefix)', async () => {
@@ -70,13 +77,79 @@ test('GET / does not throw when the MAC is unresolved (arp returns null)', async
   server.close();
 });
 
-test('GET /admin serves the real admin theme preview', async () => {
-  const { server } = createServer({ session: fakeSession(false), arp: fakeArp('m1'), ratePesosPerMinute: 1 });
+test('GET /admin without a session shows the login form, not the dashboard', async () => {
+  const adminAuth = fakeAdminAuth('tok123');
+  const { server } = createServer({ session: fakeSession(false), arp: fakeArp('m1'), ratePesosPerMinute: 1, adminAuth });
   const port = await listen(server);
-  const res = await request(port, 'GET', '/admin');
-  assert.equal(res.status, 200);
-  assert.match(res.body, /<title>Admin/);
-  server.close();
+  try {
+    const res = await request(port, 'GET', '/admin');
+    assert.equal(res.status, 200);
+    assert.match(res.body, /<title>Admin/);
+    assert.match(res.body, /id="admin-login-form"/);
+  } finally {
+    server.close();
+  }
+});
+
+test('POST /admin/login with correct credentials sets a session cookie; wrong credentials are rejected', async () => {
+  const adminAuth = fakeAdminAuth('tok123');
+  const { server } = createServer({ session: fakeSession(false), arp: fakeArp('m1'), ratePesosPerMinute: 1, adminAuth });
+  const port = await listen(server);
+  try {
+    const bad = await request(port, 'POST', '/admin/login', { body: JSON.stringify({ username: 'admin', password: 'wrong' }) });
+    assert.deepEqual(JSON.parse(bad.body), { ok: false });
+
+    const good = await request(port, 'POST', '/admin/login', { body: JSON.stringify({ username: 'admin', password: 'secret' }) });
+    assert.deepEqual(JSON.parse(good.body), { ok: true });
+    assert.match(good.headers['set-cookie'][0], /vendo5_admin=tok123/);
+  } finally {
+    server.close();
+  }
+});
+
+test('GET /admin with a valid session cookie shows the real dashboard (active sessions list)', async () => {
+  const adminAuth = fakeAdminAuth('tok123');
+  const sessionStore = { ...fakeSession(true), all: () => ({ m1: { mac: 'm1', creditPesos: 5, expiresAt: Date.now() + 60000 } }) };
+  const { server } = createServer({ session: sessionStore, arp: fakeArp('m1'), ratePesosPerMinute: 1, adminAuth });
+  const port = await listen(server);
+  try {
+    const res = await request(port, 'GET', '/admin', { headers: { Cookie: 'vendo5_admin=tok123' } });
+    assert.equal(res.status, 200);
+    assert.doesNotMatch(res.body, /id="admin-login-form"/);
+    assert.match(res.body, /m1/);
+    assert.match(res.body, />5</); // creditPesos shown
+  } finally {
+    server.close();
+  }
+});
+
+test('GET /admin with an invalid cookie still shows the login form', async () => {
+  const adminAuth = fakeAdminAuth('tok123');
+  const { server } = createServer({ session: fakeSession(false), arp: fakeArp('m1'), ratePesosPerMinute: 1, adminAuth });
+  const port = await listen(server);
+  try {
+    const res = await request(port, 'GET', '/admin', { headers: { Cookie: 'vendo5_admin=not-the-real-token' } });
+    assert.match(res.body, /id="admin-login-form"/);
+  } finally {
+    server.close();
+  }
+});
+
+test('GET /admin/api/sessions requires a valid admin session', async () => {
+  const adminAuth = fakeAdminAuth('tok123');
+  const sessionStore = { ...fakeSession(false), all: () => ({ m1: { mac: 'm1', creditPesos: 2, expiresAt: 999 } }) };
+  const { server } = createServer({ session: sessionStore, arp: fakeArp('m1'), ratePesosPerMinute: 1, adminAuth });
+  const port = await listen(server);
+  try {
+    const unauth = await request(port, 'GET', '/admin/api/sessions');
+    assert.equal(unauth.status, 401);
+
+    const auth = await request(port, 'GET', '/admin/api/sessions', { headers: { Cookie: 'vendo5_admin=tok123' } });
+    assert.equal(auth.status, 200);
+    assert.deepEqual(JSON.parse(auth.body), { m1: { mac: 'm1', creditPesos: 2, expiresAt: 999 } });
+  } finally {
+    server.close();
+  }
 });
 
 test('POST /api/pay-intent records the pending payer; a single pulse consumes it', async () => {

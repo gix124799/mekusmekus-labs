@@ -9,6 +9,7 @@ const GOOD = {
   'network.json': { lan_interface: 'br-lan' },
   'vendo.json': { coin_pin: 17, pulse_value_pesos: 1, pesos_per_minute: 1 },
   'licensing.json': { mode: 'offline' },
+  'admin.json': { username: 'admin', password_hash: 'x' },
 };
 function mk(files) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'v5cfg-'));
