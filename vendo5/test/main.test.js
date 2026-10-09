@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const http = require('node:http');
 
 const MAIN = path.join(__dirname, '..', 'main.js');
 const DEFAULTS = path.join(__dirname, '..', 'config');
@@ -101,4 +102,51 @@ test('portal listens and serves the landing page; coin pulse with no pay-intent 
   r.p.kill('SIGTERM');
   await r.exited;
   assert.match(r.out(), /"level":"warn".*orphan/i);
+});
+
+// Spec's Testing section (sub-project #2 design): "a smoke test that
+// simulates a paid pulse and asserts a firewall-allow call happened and
+// the session file was written." Missing from the plan's own Task 5 test
+// (code review Important #9) — added here as a regression guard.
+test('a paid coin pulse credits the session, calls firewall allow, and persists to disk', async () => {
+  const configDir = tmpDir();
+  const sessionFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'v5sessfile-')), 'sessions.json');
+  const gpioBase = fs.mkdtempSync(path.join(os.tmpdir(), 'v5gpiobase-'));
+  fs.writeFileSync(path.join(gpioBase, 'export'), '');
+  fs.writeFileSync(path.join(gpioBase, 'unexport'), '');
+  const pinDir = path.join(gpioBase, 'gpio17');
+  fs.mkdirSync(pinDir, { recursive: true });
+  fs.writeFileSync(path.join(pinDir, 'value'), '0');
+  fs.writeFileSync(path.join(pinDir, 'direction'), '');
+  fs.writeFileSync(path.join(pinDir, 'edge'), '');
+  const mac = 'aa:bb:cc:dd:ee:ff';
+
+  const r = run({
+    VENDO5_CONFIG_DIR: configDir,
+    VENDO5_DEFAULTS_DIR: DEFAULTS,
+    VENDO5_SESSION_FILE: sessionFile,
+    VENDO5_GPIO_BASE: gpioBase,
+    VENDO5_PORTAL_PORT: '0',
+    VENDO5_FIREWALL_CMD: 'noop',
+    VENDO5_ARP_FAKE_MAC: mac,
+  });
+  await new Promise((res) => r.p.stdout.once('data', res));
+  await new Promise((res) => setTimeout(res, 50)); // gpio watcher settle, see orphan test above
+
+  const portLine = /"message":"portal listening".*"port":(\d+)|"port":(\d+).*"message":"portal listening"/.exec(r.out());
+  const port = Number(portLine[1] || portLine[2]);
+  await new Promise((resolve, reject) => {
+    const req = http.request({ port, method: 'POST', path: '/api/pay-intent' }, (res) => { res.resume(); res.on('end', resolve); });
+    req.on('error', reject);
+    req.end();
+  });
+
+  fs.writeFileSync(path.join(pinDir, 'value'), '1'); // coin pulse
+  await new Promise((res) => setTimeout(res, 200));
+
+  r.p.kill('SIGTERM');
+  await r.exited;
+  assert.match(r.out(), new RegExp(`"level":"info".*"message":"firewall allow".*${mac}|"mac":"${mac}".*"message":"firewall allow"`));
+  const saved = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
+  assert.equal(saved[mac].creditPesos, 1);
 });

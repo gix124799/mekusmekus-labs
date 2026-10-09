@@ -99,6 +99,23 @@ test('load with corrupt file starts empty, does not throw', () => {
   assert.equal(s.getSession('anything'), undefined);
 });
 
+// Fix (code review Important #7): vendo boxes lose power routinely; a
+// truncate-then-write leaves a corrupt file on a power cut mid-write,
+// silently emptying every paying customer's session on next boot. save()
+// must write via a temp file + rename, which also means it tolerates (and
+// cleans up) a stale .tmp left over from a previous aborted write.
+test('save writes via temp file + rename, replacing any stale .tmp from a previous crash', () => {
+  const file = tmpFile();
+  fs.writeFileSync(file + '.tmp', 'stale garbage from a previous crash');
+  const s = createSessionStore(file);
+  s.load();
+  s.addCredit('m1', 1, 1, 0);
+  s.save();
+  assert.ok(!fs.existsSync(file + '.tmp'), 'stale .tmp should be consumed by the rename, not left behind');
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(saved.m1.creditPesos, 1);
+});
+
 test('all() returns every active session keyed by mac', () => {
   const s = createSessionStore(tmpFile());
   s.load();

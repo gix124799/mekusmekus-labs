@@ -13,6 +13,14 @@ function createFirewall(runCommand) {
   }
 
   function syncFromSessions(sessionsByMac) {
+    // Flush first: a MAC whose session expired while the service was
+    // down (crash/restart) must not keep its rule from before — this
+    // only ever adds otherwise, never removes.
+    try {
+      runCommand(['nft', 'flush', 'set', 'inet', 'vendo5', 'allowed']);
+    } catch (e) {
+      log('error', 'firewall flush failed at boot', { error: e.message });
+    }
     for (const mac of Object.keys(sessionsByMac)) {
       try {
         allow(mac);

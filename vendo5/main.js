@@ -43,7 +43,12 @@ const runCommand = process.env.VENDO5_FIREWALL_CMD === 'noop'
     };
 
 const firewall = createFirewall(runCommand);
-const arp = createArp(runCommand);
+// shortcut: VENDO5_ARP_FAKE_MAC fixes every client's resolved MAC, for
+// tests that need a deterministic payer without a real LAN/ARP table.
+// Real deployments never set this.
+const arp = process.env.VENDO5_ARP_FAKE_MAC
+  ? { ipToMac: () => process.env.VENDO5_ARP_FAKE_MAC }
+  : createArp(runCommand);
 
 try {
   firewall.syncFromSessions(session.all());
@@ -68,6 +73,7 @@ gpio.watchPin(coin_pin, 'in', 'rising', (value) => {
   session.addCredit(mac, pulse_value_pesos, pesos_per_minute);
   try {
     firewall.allow(mac);
+    log('info', 'firewall allow', { mac });
   } catch (e) {
     log('error', 'firewall allow failed', { mac, error: e.message });
   }

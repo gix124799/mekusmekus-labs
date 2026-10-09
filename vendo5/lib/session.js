@@ -24,7 +24,9 @@ function createSessionStore(filePath) {
 
   function save() {
     fs.mkdirSync(require('node:path').dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(sessions));
+    const tmp = filePath + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(sessions));
+    fs.renameSync(tmp, filePath); // atomic: a crash leaves the old file or the new one, never a half-write
   }
 
   function getSession(mac) {
