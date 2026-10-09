@@ -1,0 +1,41 @@
+
+config main global
+	option uci_enable 'true'
+
+config server '_lan'
+	list listen '443 ssl default_server'
+	list listen '80'
+	option server_name '_lan'
+	list include 'restrict_locally'
+	list include '/soft/config/nginx.locations'
+	option uci_manage_ssl 'self-signed'
+	option ssl_certificate '/etc/nginx/conf.d/_lan.crt'
+	option ssl_certificate_key '/etc/nginx/conf.d/_lan.key'
+	option ssl_session_cache 'shared:SSL:32k'
+	option ssl_session_timeout '64m'
+
+config server '_subvendo'
+	list listen '4455 ssl default_server'
+	option server_name '_subvendo'
+	list include 'restrict_locally'
+	list include '/soft/config/subvendo.locations'
+	option uci_manage_ssl 'self-signed'
+	option ssl_certificate '/etc/nginx/conf.d/_lan.crt'
+	option ssl_certificate_key '/etc/nginx/conf.d/_lan.key'
+	option ssl_session_cache 'shared:SSL:32k'
+	option ssl_session_timeout '64m'
+
+config server 'redirect_ngrok'
+	list listen '8080'
+	option server_name '_ngrok'
+	list include '/soft/config/admin.locations'
+	
+config server 'redirect_pppoe'
+	list listen '8081'
+	option server_name '_pppoe'
+	list include '/soft/config/pppoe.locations'
+	
+config server 'media_server'
+	list listen '4400'
+	option server_name '_media'
+	list include '/soft/config/media.locations'

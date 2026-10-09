@@ -1,0 +1,40 @@
+config globals 'globals'
+	option packet_steering '1'
+	
+config interface 'loopback'
+	option device 'lo'
+	option proto 'static'
+	option ipaddr '127.0.0.1'
+	option netmask '255.0.0.0'
+
+config device
+	option bridge_empty '1'
+	option name 'br-lan'
+	option type 'bridge'
+	list ports 'eth1'
+	list ports 'vlan.22'
+	list ports 'vlan.13'
+
+config device
+	option vid '22'
+	option ifname 'eth0'
+	option name 'vlan.22'
+	option type '8021q'
+
+config device
+	option vid '13'
+	option ifname 'eth0'
+	option name 'vlan.13'
+	option type '8021q'
+	
+config interface 'lan'
+	option device 'br-lan'
+	option proto 'static'
+	option ipaddr '10.0.0.1'
+	option netmask '255.255.224.0'
+	
+config interface 'wan'
+	option ifname 'eth0'
+	option proto 'dhcp'
+	list  dns  '8.8.8.8'
+	list  dns  '8.8.4.4'

@@ -1,0 +1,53 @@
+#!/bin/sh /etc/rc.common
+
+USE_PROCD=1
+
+START=250
+
+checkfile(){
+    . /usr/share/libubox/jshn.sh
+	json_init;
+	FILE="/usr/ngrok";
+	json_load_file /mnt/wifi5/config/ngrok.conf;
+	json_get_var authtoken authtoken;
+	if [ -e '/tmp/ngrok-ssh.stat' ]; then
+		rm -R /tmp/ngrok-ssh.stat;
+	fi
+	if [ -e 'tmp/ngrok-token.yml' ]; then
+		rm -R tmp/ngrok-token.yml;
+	fi
+	if [ -e '/tmp/ngrok-http.stat' ]; then
+		rm -R /tmp/ngrok-http.stat;
+	fi
+	if  json_is_a authtoken string; then
+		if test -f "$FILE"; then
+			chmod 755 $FILE
+			$FILE config add-authtoken $authtoken  --config=/tmp/ngrok-token.yml
+			sleep 1;
+			http
+			ssh
+		fi
+	fi
+}
+
+http(){
+	procd_open_instance
+    procd_set_param command $FILE http 8080 --config /tmp/ngrok-token.yml,/soft/config/ngrok-http.yml
+	procd_set_param respawn
+    procd_set_param stdout 0
+    procd_set_param stderr 0
+    procd_close_instance
+}
+
+ssh(){
+	procd_open_instance
+    procd_set_param command $FILE tcp 22 --config /tmp/ngrok-token.yml,/soft/config/ngrok-ssh.yml
+	procd_set_param respawn
+    procd_set_param stdout 0
+    procd_set_param stderr 0
+    procd_close_instance
+}
+
+start_service() {
+	checkfile
+}

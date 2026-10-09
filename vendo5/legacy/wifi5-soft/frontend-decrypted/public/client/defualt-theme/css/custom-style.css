@@ -1,0 +1,212 @@
+.card {
+	background-color: #ffffff;
+}
+.bg-gray-dark {
+	background: #ffffff;
+}
+
+.modal-content {
+	background-color: #ffffff;
+}
+
+.modal-title {
+	color: black;
+	font-size: 19px;
+	font-weight: bold;
+}
+.modal-title i {
+	color: #000000 !important;
+}
+.card-title {
+	color: black !important;
+	border-bottom: 1px solid black !important;
+}
+
+.card-body {
+	color: black;
+}
+.modal-body {
+	background-color: white !important;
+}
+.text-white {
+	color: black !important;
+}
+.text-success {
+    color: #009d44 !important;
+}
+
+.btn {
+	border: 2px solid;
+	font-weight: bold;
+}
+
+.btn-outline-success {
+	color: #009d44 !important;
+	border-color: #009d44 !important;
+}
+
+.btn-outline-warning {
+    color: #d28d00 !important;
+    border-color: #d28d00 !important;
+}
+
+.text-outline-info {
+    color: #7b50cc !important;
+}
+
+.text-info {
+    color: #7b50cc !important;
+}
+
+.btn-outline-success:hover, .editable-container.editable-inline .editableform .control-group .editable-buttons .editable-submit:hover {
+    color: #fff !important;
+	background-color: #006e30 !important;
+}
+#progressbar-d {
+	bottom: 1px;
+}
+
+#client-info-card {
+	font-weight: 400;
+}
+
+#client-info-card .text-success {
+	font-weight: bold;
+}
+
+#total-rx-tx {
+	font-weight: bold;
+}
+
+#barvalue-d {
+	font-weight: bold;
+}
+#rates-card th, #rates-card td {
+    border: 3px solid black !important;
+    color: black !important;
+}
+.text-muted {
+	color: black !important;
+}
+
+.messages-content {
+	background: white;
+}
+
+.chatheader {
+	background: rgb(255 255 255);
+	border-bottom: 1px solid black;
+	color: black;
+}
+.chat-title {
+	color: #000;
+	font-weight: bold;
+}
+.message-box {
+	border-top: 1px solid black;
+	background: rgb(255 255 255);
+}
+.message-box .message-input {
+	color: black;
+}
+
+#select-dropdown-options {
+	background-color: #ffffff;
+	color: #000000;
+}
+
+#select-dropdown-options .dropdown-header {
+	color: #000000;
+}
+
+.input-group input{
+	background-color: #ffffff !important;
+	color: #000000 !important;
+}
+
+.table thead tr th {
+	color: black;
+}
+
+.modal-body .table-responsive {
+	background-color: white !important;
+}
+#modal-body-9908 div {
+	color: black !important;
+}
+
+#modal-body-755 div {
+	color: black !important;
+	margin-top: 0px !important;
+}
+.table-striped tbody tr:nth-of-type(odd) {
+	background-color: white !important;
+}
+.table-hover tbody tr:hover {
+	background-color: white !important;
+}
+.table {
+	border:1px solid black;
+}
+.input-group-append .input-group-text, .input-group-prepend .input-group-text {
+	color: #000000 !important;
+	background: #ffffff !important;
+}
+
+.table-dark {
+    color: #fff !important;
+    background-color: #ffffff !important;
+}
+
+tbody tr {
+	color: black;
+}
+#select-box-dropdown {
+	background-color: #00d25b !important;
+	border-color: #00d25b !important;
+	color: black !important;
+}
+.dialogbox {
+	color: #000000;
+	background: #fff !important;
+	box-shadow: 0px 0px 9px 2px black;
+}
+.dialogbox .text-warning {
+	color: black !important;
+}
+
+.dialogbox .text-info {
+	color: #6420e4 !important;
+}
+.dialogbox .text-info i {
+	color: black !important;
+}
+
+.dialogbox2 {
+	color: #000000;
+	background: #fff !important;
+	box-shadow: 0px 0px 9px 2px black;
+}
+.dialogbox2 .text-warning {
+	color: black !important;
+}
+
+.dialogbox2 .text-info {
+	color: #6420e4 !important;
+}
+.dialogbox2 .text-info i {
+	color: black !important;
+}
+
+.footer span {
+	color: #6c7293 !important;
+}
+
+#client-hotspot-logs {
+	font-weight: 500;
+}
+select {
+	color: black !important;
+	border: 1px solid #2c2e33 !important;
+	background: white !important;
+}

@@ -1,0 +1,5 @@
+version: "2"
+web_addr: localhost:4040
+log_format: logfmt
+region: ap
+log: /tmp/ngrok-http.stat

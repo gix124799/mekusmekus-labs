@@ -1,0 +1,4 @@
+location ~ \.(mp4|vtt|jpg|png) {
+	add_header "Access-Control-Allow-Origin" "*";
+    root /mnt/media;
+}

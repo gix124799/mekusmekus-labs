@@ -1,0 +1,42 @@
+root /tmp/i/public;
+
+error_page 497  = @foobar;
+
+location @foobar {
+	return 302 https://$http_host/admin;
+}
+
+location ~ \.(mp3|ico|map|css|jpg|png|js|woff|woff2|ttf) {
+        limit_conn perip 10;
+        limit_req zone=ip burst=30 delay=8;
+        root /tmp/i/public;
+}
+
+location /admin {
+    limit_conn perip 10;
+    limit_req zone=ip burst=30 delay=8;
+    try_files $uri @backend;
+}
+
+location /reseller {
+    limit_conn perip 10;
+    limit_req zone=ip burst=30 delay=8;
+    try_files $uri @backend;
+}
+
+location / {
+    limit_conn perip 10;
+    limit_req zone=ip burst=30 delay=8;
+    return 302 http://$host/admin;
+}
+
+location @backend {
+    proxy_pass http://backend;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header Host $host;
+	proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}

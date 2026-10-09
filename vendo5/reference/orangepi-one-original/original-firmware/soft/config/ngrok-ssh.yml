@@ -1,0 +1,5 @@
+version: "2"
+web_addr: localhost:4041
+log_format: logfmt
+region: jp
+log: /tmp/ngrok-ssh.stat

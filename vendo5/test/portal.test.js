@@ -46,30 +46,36 @@ test('client IP is normalized before ARP lookup (IPv6-mapped IPv4 strips the ::f
   assert.ok(!calls[0].startsWith('::ffff:'), `expected a stripped IPv4, got ${calls[0]}`);
 });
 
-test('unpaid client gets the landing page on GET /', async () => {
+// Real-frontend ruling: GET / now serves the real app's single SPA shell
+// (same for paid/unpaid), matching the actual decrypted frontend's design
+// — status is conveyed by client-side JS polling /api/status, never by
+// server-rendered HTML branching per state. Supersedes the earlier
+// landing/online page split.
+test('GET / always serves the real page shell with the real insert-coin button', async () => {
   const { server } = createServer({ session: fakeSession(false), arp: fakeArp('m1'), ratePesosPerMinute: 1 });
   const port = await listen(server);
   const res = await request(port, 'GET', '/');
   assert.equal(res.status, 200);
   assert.match(res.body, /insert coin/i);
+  assert.match(res.body, /id="client-insert-coin"/);
   server.close();
 });
 
-test('active client gets an online page on GET /', async () => {
-  const { server } = createServer({ session: fakeSession(true), arp: fakeArp('m1'), ratePesosPerMinute: 1 });
-  const port = await listen(server);
-  const res = await request(port, 'GET', '/');
-  assert.equal(res.status, 200);
-  assert.match(res.body, /online/i);
-  server.close();
-});
-
-test('unresolved MAC (arp returns null) is treated as unpaid, does not throw', async () => {
+test('GET / does not throw when the MAC is unresolved (arp returns null)', async () => {
   const { server } = createServer({ session: fakeSession(false), arp: fakeArp(null), ratePesosPerMinute: 1 });
   const port = await listen(server);
   const res = await request(port, 'GET', '/');
   assert.equal(res.status, 200);
   assert.match(res.body, /insert coin/i);
+  server.close();
+});
+
+test('GET /admin serves the real admin theme preview', async () => {
+  const { server } = createServer({ session: fakeSession(false), arp: fakeArp('m1'), ratePesosPerMinute: 1 });
+  const port = await listen(server);
+  const res = await request(port, 'GET', '/admin');
+  assert.equal(res.status, 200);
+  assert.match(res.body, /<title>Admin/);
   server.close();
 });
 

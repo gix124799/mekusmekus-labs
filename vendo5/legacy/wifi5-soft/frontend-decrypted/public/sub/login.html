@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Reseller</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <link rel="icon" href="i.ico">
+    <link rel="stylesheet" href="/sub/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/nav/assets/css/materialdesignicons.min.css">
+    <link rel="stylesheet" href="/sub/css/all.css">
+    <link rel="stylesheet" type="text/css" href="/sub/css/style.css">
+    <script src="/sub/js/jquery.min.js"></script>
+    <script type="text/javascript" src="/socket.io.js?version={2}"></script>
+    <script src="/sub/js/md5.js?version={2}"></script>
+    <script src="/sub/script/main.js?version={2}"></script>
+    <script type="text/javascript" src="/nav/assets/js/toast.js"></script>
+  </head>
+  <body>
+    <div class="container">
+      <div class="d-flex justify-content-center h-100">
+        <div class="card">
+          <div class="card-header">
+            <h3>Sign In| Reseller</h3>
+          </div>
+          <div class="card-body">
+            <div>
+              <h3 style="width: 100%; text-align: center; color: #efff00; font-size: 17px;" id="error"></h3>
+              <form action='/reseller?login=true' method='post'>
+                <div class="input-group form-group">
+                  <div class="input-group-prepend">
+                    <span class="input-group-text">
+                      <i class="fas fa-user"></i>
+                    </span>
+                  </div>
+                  <input type="text" id="username" name="sub-username" class="form-control" autocomplete="on" placeholder="username">
+                </div>
+                <div class="input-group form-group">
+                  <div class="input-group-prepend">
+                    <span class="input-group-text">
+                      <i class="fas fa-key"></i>
+                    </span>
+                  </div>
+                  <input type="password" name="sub-password" id="password" autocomplete="on" class="form-control" placeholder="password" style="border-top-right-radius: 0.25rem; border-bottom-right-radius: 0.25rem;">
+                  <i class="far fa-eye" id="showhidepass" style="z-index: 99999999; position: absolute; right: 9px; top: 11px;"></i>
+                </div>
+				<div class="form-group">
+					<button id="login-btn" class="btn float-right login_btn" type='button'>Login</button>
+				</div>
+              </form>
+              
+            </div>
+          </div>
+          <div class="card-footer">
+            <div id="version" style="color: white; font-size: 14px;"></div>
+            <div id="prefix" style="color: white; font-size: 14px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

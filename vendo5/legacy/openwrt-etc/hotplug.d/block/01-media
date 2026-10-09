@@ -1,0 +1,53 @@
+#!/bin/sh
+. /usr/share/libubox/jshn.sh
+
+getinfo(){
+	json_init;
+	json_load "$1"
+	if json_is_a blockdevices array
+    then
+        json_select blockdevices;
+        json_select 1
+		if json_is_a children array
+		then
+			json_select children
+			if json_is_a 2 object
+			then
+				json_select 2
+				json_get_var mountpoint mountpoint
+				json_select ..
+			fi
+			if [ "$mountpoint" != "/" ] && [ "$mountpoint" != "/rom" ]; then
+				idx=1
+				while json_is_a ${idx} object
+				do
+					local name label mountpoint
+					json_select $idx
+					json_get_vars name label mountpoint
+					if [ ! $mountpoint ]; then
+						if [ ! -d /mnt/media ]; then
+							mkdir /mnt/media
+						fi
+						if [ ! -d /mnt/media/$name ]; then
+							mkdir /mnt/media/$name
+						fi
+						mount -t auto /dev/$name /mnt/media/$name -o rw
+						logger -t media "device $name mounted"
+					fi
+					idx=$(( idx + 1 ))
+					json_select ..
+				done
+			fi
+		fi
+    fi
+}
+
+if [ "$ACTION" = "add" -a "$DEVTYPE" = "disk" ]; then
+	getinfo "$(lsblk -JO /dev/$DEVNAME)"
+fi
+
+if [ "$ACTION" = "remove" -a "$DEVTYPE" = "disk" ]; then
+	umount /dev/$DEVNAME
+	rm -r /mnt/media/$DEVNAME
+	logger -t media "device $DEVNAME umount"
+fi

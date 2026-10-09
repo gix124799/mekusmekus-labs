@@ -6,58 +6,84 @@ const PAY_INTENT_TTL_MS = 10000;
 const THEME_DIR = path.join(__dirname, '..', 'public', 'theme');
 const THEME_TYPES = { '.css': 'text/css', '.js': 'text/javascript', '.woff2': 'font/woff2', '.woff': 'font/woff', '.png': 'image/png', '.ico': 'image/x-icon' };
 
-// Real markup/ids recovered from the original WiFi5-Soft client theme
-// (legacy/wifi5-soft/frontend-decrypted/public/client/defualt-theme/global.js:
-// creditbox, clientstatus), trimmed to what sub-project #2 actually has:
-// one coin pin, one rate, no vouchers/extend/eload (out of scope per spec).
-function pageShell(statusTitle, statusHtml, creditHtml) {
+// Full real page structure, verbatim from the decrypted WiFi5-Soft client
+// theme (legacy/wifi5-soft/frontend-decrypted/public/client/defualt-theme/
+// index.html) — a hand-trimmed version broke the real CSS's layout
+// assumptions (sidebar/navbar/footer missing while their classes
+// (container-scroller/main-panel/content-wrapper) stayed, clipping
+// content). Dropped only what's genuinely unrecoverable or unused:
+// socket.io (no realtime backend), jquery.flot (no bandwidth graph),
+// client/script/{tools,chat,*}.js (empty/obfuscated in the original),
+// and the {2}/{4} license-injection placeholders.
+function clientPage() {
   return `<!DOCTYPE html>
 <html lang="en">
+<meta http-equiv="content-type" content="text/html;charset=utf-8" />
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-<title>WiFi5-Soft</title>
+<title>WiFi5-Soft| Vendo</title>
 <link rel="icon" href="/theme/img/i.ico">
+<link rel="stylesheet" href="/theme/css/font-awesome.min.css">
 <link rel="stylesheet" href="/theme/css/materialdesignicons.min.css">
 <link rel="stylesheet" href="/theme/css/vendor.bundle.base.css">
 <link rel="stylesheet" href="/theme/css/style.css">
-<link rel="stylesheet" href="/theme/css/toast.css">
 <script src="/theme/js/jquery.min.js"></script>
 <script src="/theme/js/toast.js"></script>
 </head>
 <body>
 <div class="container-scroller">
-<div class="container-fluid page-body-wrapper" style="padding-top:40px;">
-<div class="main-panel" style="margin:auto;max-width:480px;">
-<div class="content-wrapper">
-<div class="text-center" style="margin-bottom:16px;"><img src="/theme/img/logo.png" style="max-width:160px;"></div>
-<div class="card" style="min-height:86px;margin-bottom:10px;">
-<h4 class="card-title" id="title-status" style="display:flex;border-bottom:1px solid;padding:5px;margin:5px 10px;">${statusTitle}</h4>
-<div class="card-body" style="display:flex;padding:16px 20px;justify-content:space-around;">
-<div style="margin-right:20px;width:65%;display:grid;justify-content:center;padding-left:15px;">
-<div class="row" style="align-content:flex-end;"><div class="d-flex align-items-center align-self-start"><h3 class="mb-0 text-success" id="client-duration">${statusHtml}</h3></div></div>
-<h6 class="text-muted font-weight-normal">Current Duration</h6>
+<nav class="sidebar sidebar-offcanvas" id="sidebar" style="z-index:999999;">
+<div class="sidebar-brand-wrapper d-none d-lg-flex align-items-center justify-content-center fixed-top">
+<a class="sidebar-brand brand-logo" href="?page=dashboard"><img src="/theme/img/logo.png" alt="logo" style="object-fit:cover;"/></a>
+<a class="sidebar-brand brand-logo-mini" href="?page=dashboard"><img src="/theme/img/logo-min.png" alt="logo" style="object-fit:cover;"/></a>
+</div>
+<ul class="nav">
+<li class="nav-item nav-category"><span class="nav-link">Navigation</span></li>
+<li class="nav-item menu-items"><a class="nav-link" href="?page=dashboard"><span class="menu-icon"><i class="mdi mdi-speedometer"></i></span><span class="menu-title">Dashboard</span></a></li>
+<li id="movie-nav" style="display:none;" class="nav-item menu-items"><a class="nav-link" href="?page=media"><span class="menu-icon"><i class="mdi mdi-movie"></i></span><span class="menu-title">Movies</span></a></li>
+<li id="eload-parent" class="nav-item menu-items"><a class="nav-link" href="?page=eload"><span class="menu-icon"><i class="mdi mdi-cash"></i></span><span class="menu-title">E-load</span></a></li>
+<li class="nav-item menu-items"><a class="nav-link" href="?page=logs"><span class="menu-icon"><i class="mdi mdi-format-align-justify"></i></span><span class="menu-title">Logs</span></a></li>
+</ul>
+</nav>
+<div class="container-fluid page-body-wrapper">
+<nav class="navbar p-0 fixed-top d-flex flex-row">
+<div class="navbar-brand-wrapper d-flex d-lg-none align-items-center justify-content-center">
+<a class="navbar-brand brand-logo-mini" href="?page=dashboard"><img src="/theme/img/logo.png" alt="logo" style="object-fit:cover;"/></a>
+</div>
+<div class="navbar-menu-wrapper flex-grow d-flex align-items-stretch">
+<button class="navbar-toggler navbar-toggler align-self-center" type="button" data-toggle="minimize"><span class="mdi mdi-menu"></span></button>
+<ul class="navbar-nav w-100"></ul>
+<ul class="navbar-nav navbar-nav-right">
+<li class="nav-item dropdown border-left"><a class="nav-link" href="/apk/wifi5-softweb.apk"><i class="mdi mdi-android" style="color:#00d600;"></i></a></li>
+<li class="nav-item dropdown border-left" style="height:35px;padding:0 5px;display:flex;align-items:center;"><span id="credit" class="menu-title" style="white-space:nowrap;font-size:18px;">&#8369; 0.00</span></li>
+</ul>
+<button class="navbar-toggler navbar-toggler-right d-lg-none align-self-center" type="button" data-toggle="offcanvas"><span class="mdi mdi-format-line-spacing"></span></button>
+</div>
+</nav>
+<div class="main-panel">
+<div id="conntent" class="content-wrapper"></div>
+<footer class="footer">
+<div class="d-sm-flex justify-content-center justify-content-sm-between">
+<span class="text-muted d-block text-center text-sm-left d-sm-inline-block">WiFi5-Soft <a class="text-primary" href="https://www.facebook.com/groups/196946467417134" target="_blank">Facebook Page</a><br> Developed By <a href="https://www.facebook.com/extrans.wifi5" target="_blank">J-Olive</a><br><a id="version"></a></span>
+</div>
+</footer>
 </div>
 </div>
 </div>
-<div class="card" style="min-height:86px;">
-<div class="card-body" style="display:flex;padding:10px 20px;justify-content:space-around;">
-<div style="margin-right:20px;width:75%;display:grid;justify-content:center;padding-left:15px;">
-<div class="row" style="align-content:flex-end;"><div class="d-flex align-items-center align-self-start"><h3 class="mb-0 text-info" id="client-credit">${creditHtml}</h3></div></div>
-</div>
-<div id="insert-btn-parent" style="display:grid;align-items:center;">
-<button id="client-insert-coin" class="btn btn-outline-warning btn-icon-text" style="height:auto;">
-<i class="mdi mdi-coin btn-icon-prepend mdi-48px"></i>
-<span id="insert1" class="d-inline-block text-left blink" style="margin:auto;font-size:18px;font-weight:bold;">INSERT COIN</span>
-</button>
-</div>
-</div>
-</div>
-</div>
-</div>
-</div>
-</div>
+<div id="spinner" class="spin"><i class="fa fa-spinner fa-spin fa-3x fa-fw" style="top:calc(50% - 70px);left:calc(50% - 35px);position:fixed;"></i></div>
+<script src="/theme/js/vendor.bundle.base.js"></script>
+<script src="/theme/js/off-canvas.js"></script>
+<script src="/theme/js/misc.js"></script>
 <script>
+// Real widget markup recovered from global.js's creditbox/clientstatus
+// (legacy/wifi5-soft/frontend-decrypted/public/client/defualt-theme/
+// global.js) — the fragment contents are theirs, this assembly/wiring is
+// ours, since the original dashboard.js that would have done this is
+// empty in the decrypted archive (server-injected at runtime, never static).
+var clientstatus = $('<div class="card" style="min-height:86px;margin-bottom:10px;"><h4 class="card-title" id="title-status" style="display:flex;border-bottom:1px solid;padding:5px;margin:5px 10px;"></h4><div class="card-body" style="display:flex;padding:16px 20px;justify-content:space-around;"><div style="margin-right:20px;width:65%;display:grid;justify-content:center;padding-left:15px;"><div class="row" style="align-content:flex-end;"><div class="d-flex align-items-center align-self-start"><h3 class="mb-0 text-success" id="client-duration"></h3></div></div><h6 class="text-muted font-weight-normal">Current Duration</h6></div></div></div>');
+var creditbox = $('<div class="card" style="min-height:86px;"><div class="card-body" style="display:flex;padding:10px 20px;justify-content:space-around;"><div style="margin-right:20px;width:75%;display:grid;justify-content:center;padding-left:15px;"><div class="row" style="align-content:flex-end;"><div class="d-flex align-items-center align-self-start"><h3 class="mb-0 text-info" id="client-credit"></h3></div></div></div><div id="insert-btn-parent" style="display:grid;align-items:center;"><button id="client-insert-coin" class="btn btn-outline-warning btn-icon-text" style="height:auto;"><i class="mdi mdi-coin btn-icon-prepend mdi-48px"></i><span id="insert1" class="d-inline-block text-left blink" style="margin:auto;font-size:18px;font-weight:bold;">INSERT COIN</span></button></div></div></div>');
+$('#conntent').append(clientstatus).append(creditbox);
 $('#client-insert-coin').on('click', function () {
   $.post('/api/pay-intent').done(function () { toastada.show('Insert your coin now.', 'info'); });
 });
@@ -66,22 +92,76 @@ function poll() {
     $('#title-status').text(s.active ? 'Online' : 'Offline');
     $('#client-duration').text(s.active ? Math.floor(s.remainingSeconds / 60) + 'm ' + (s.remainingSeconds % 60) + 's' : '00:00');
     $('#client-credit').text(s.active ? 'Connected' : 'Insert coin to continue');
+    $('#credit').html('&#8369; ' + (s.active ? s.remainingSeconds : 0));
   });
 }
+poll();
 setInterval(poll, 2000);
 </script>
 </body>
 </html>`;
 }
 
-function landingPage() {
-  return pageShell('Offline', '00:00', 'Insert coin to continue');
-}
-
-function onlinePage(remainingSeconds) {
-  const mins = Math.floor(remainingSeconds / 60);
-  const secs = remainingSeconds % 60;
-  return pageShell('Online', `${mins}m ${secs}s`, 'Connected');
+// Preview only: the real admin ("nav") shell, verbatim structure, with its
+// own content left blank. No admin backend exists yet (deferred sub-project
+// per docs/superpowers/specs — login, auth, and every menu item's actual
+// data are future work). This route exists so the real UI can be seen now.
+function adminPage() {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="content-type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>Admin| Vendo</title>
+<link rel="icon" href="/theme/img/i.ico">
+<link rel="stylesheet" href="/theme/css/font-awesome.min.css">
+<link rel="stylesheet" href="/theme/css/materialdesignicons.min.css">
+<link rel="stylesheet" href="/theme/css/admin-style.css">
+<script src="/theme/js/jquery.min.js"></script>
+<script src="/theme/js/toast.js"></script>
+</head>
+<body>
+<div class="container-scroller">
+<nav class="sidebar sidebar-offcanvas" id="sidebar">
+<div class="sidebar-brand-wrapper d-none d-lg-flex align-items-center justify-content-center fixed-top">
+<a class="sidebar-brand brand-logo" href="?page=dashboard"><img src="/theme/img/logo.png" alt="logo"/></a>
+<a class="sidebar-brand brand-logo-mini" href="?page=dashboard"><img src="/theme/img/logo-min.png" alt="logo"/></a>
+</div>
+<ul class="nav">
+<li class="nav-item profile"><div class="profile-desc"><div class="profile-pic"><div class="profile-name"><h5 class="mb-0 font-weight-normal">Vendo</h5><span>Device</span></div></div></div></li>
+<li class="nav-item nav-category"><span class="nav-link">Navigation</span></li>
+<li class="nav-item menu-items"><a class="nav-link" href="?page=dashboard"><span class="menu-icon"><i class="mdi mdi-speedometer"></i></span><span class="menu-title">Dashboard</span></a></li>
+<li class="nav-item menu-items"><a class="nav-link" href="?page=eload"><span class="menu-icon"><i class="mdi mdi-cash"></i></span><span class="menu-title">Eload</span></a></li>
+<li class="nav-item menu-items"><a class="nav-link" href="?page=vouchers"><span class="menu-icon"><i class="mdi mdi-barcode"></i></span><span class="menu-title">Vouchers</span></a></li>
+<li class="nav-item menu-items"><a class="nav-link" href="?page=credit"><span class="menu-icon"><i class="mdi mdi-credit-card-multiple"></i></span><span class="menu-title">Credit</span></a></li>
+<li class="nav-item menu-items"><a class="nav-link" href="?page=pppoe"><span class="menu-icon"><i class="mdi mdi-settings"></i></span><span class="menu-title">PPPoE</span></a></li>
+<li class="nav-item menu-items"><a class="nav-link" href="?page=network"><span class="menu-icon"><i class="mdi mdi-lan"></i></span><span class="menu-title">Network</span></a></li>
+<li class="nav-item menu-items"><a class="nav-link" href="?page=sales"><span class="menu-icon"><i class="mdi mdi-cash-multiple"></i></span><span class="menu-title">Sales</span></a></li>
+<li class="nav-item menu-items"><a class="nav-link" href="?page=logs"><span class="menu-icon"><i class="mdi mdi-format-align-justify"></i></span><span class="menu-title">Logs</span></a></li>
+</ul>
+</nav>
+<div class="container-fluid page-body-wrapper">
+<nav class="navbar p-0 fixed-top d-flex flex-row">
+<div class="navbar-menu-wrapper flex-grow d-flex align-items-stretch">
+<button class="navbar-toggler navbar-toggler align-self-center" type="button" data-toggle="minimize"><span class="mdi mdi-menu"></span></button>
+<ul class="navbar-nav w-100"></ul>
+<button class="navbar-toggler navbar-toggler-right d-lg-none align-self-center" type="button" data-toggle="offcanvas"><span class="mdi mdi-format-line-spacing"></span></button>
+</div>
+</nav>
+<div class="main-panel">
+<div id="conntent" class="content-wrapper">
+<div class="card" style="margin-top:20px;"><div class="card-body"><h4>Admin preview</h4><p class="text-muted">This is a visual preview of the real WiFi5-Soft admin theme. No admin backend (login, data, actions) exists yet &mdash; deferred to a future sub-project.</p></div></div>
+</div>
+<footer class="footer"><div class="d-sm-flex justify-content-center justify-content-sm-between"><span class="text-muted">WiFi5-Soft admin preview</span></div></footer>
+</div>
+</div>
+</div>
+<script src="/theme/js/vendor.bundle.base.js"></script>
+<script src="/theme/js/off-canvas.js"></script>
+<script src="/theme/js/admin-misc.js"></script>
+</body>
+</html>`;
 }
 
 function serveThemeFile(urlPath, res) {
@@ -147,6 +227,12 @@ function createServer({ session, arp, ratePesosPerMinute }) {
       return;
     }
 
+    if (req.method === 'GET' && (req.url === '/admin' || req.url.startsWith('/admin?'))) {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(adminPage());
+      return;
+    }
+
     if (req.method === 'POST' && req.url === '/api/pay-intent') {
       const ok = mac ? setPendingPayer(mac) : false;
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -161,9 +247,8 @@ function createServer({ session, arp, ratePesosPerMinute }) {
       return;
     }
 
-    const active = !!mac && session.isActive(mac);
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(active ? onlinePage(remainingSecondsFor(mac)) : landingPage());
+    res.end(clientPage());
   });
 
   return { server, consumePendingPayer };

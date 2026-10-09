@@ -1,0 +1,112 @@
+#!/bin/sh /etc/rc.common
+
+. /usr/share/libubox/jshn.sh
+
+USE_PROCD=1
+
+START=200
+
+start_node(){
+	procd_open_instance
+    procd_set_param command /soft/index.o
+	procd_set_param respawn
+    procd_set_param stdout 0
+    procd_set_param stderr 0
+    procd_close_instance
+}
+
+checksysfs(){
+	json_init;
+	blckdvice=$(lsblk -JpO);
+	json_load  "$blckdvice";
+	if json_is_a blockdevices array
+	then
+		json_select blockdevices;
+		id1=1
+		while json_is_a $id1 object
+		do
+			json_select $id1 
+			json_get_var disk name;
+			json_get_var pttype pttype;
+
+			if json_is_a children array
+			then
+				id2=1
+				json_select children
+				while json_is_a $id2 object
+				do
+					json_select $id2
+					json_get_vars name mountpoint partlabel fstype;
+					json_select ..
+					
+					if [ "$mountpoint" == "/" ] || [ "$mountpoint" == "/rom" ]; then
+						sysdisk="$disk"
+						rootdisk="$name"
+						rpttype="$pttype"
+					fi
+					if [ "$sysdisk" == "$disk" ]; then
+						if [ "$pttype" == "gpt" ] && [ "$partlabel" == "WiFi5" ]; then
+							wifi5_disk="$name"
+							wifi5_mountpoint="$mountpoint"
+							wifi5_partlabel="$partlabel"
+							wifi5_fstype="$fstype"
+						fi
+						if [ "$pttype" == "dos" ] && [  $id2 == 3 ]; then
+							wifi5_disk="$name"
+							wifi5_mountpoint="$mountpoint"
+							wifi5_fstype="$fstype"
+						fi
+					fi
+					id2=$(( id2 + 1 ))
+				done
+				json_select ..
+			fi
+			json_select ..
+			id1=$(( id1 + 1 ))
+		done
+	fi
+
+	if [ ! $wifi5_disk ]; then
+		if [ "$rpttype" == "gpt" ] && [ $sysdisk ] && [ $rootdisk ]; then
+			sector=$(fdisk -l |grep $rootdisk | awk '{print $3}');
+			sum=$(expr $sector + 100);
+			part=$( (echo n;)|fdisk $sysdisk |grep "Partition number"|grep -o '[0-9]\+');
+			part=$(echo $part|awk '{print $1}')
+			(echo n; echo $part; echo $sum; echo; echo x; echo n; echo $part; echo "WiFi5"; echo r; echo w;) | fdisk $sysdisk;
+			checksysfs
+		fi
+		if [ "$rpttype" == "dos" ] && [ $sysdisk ] && [ $rootdisk ]; then
+			sector=$(fdisk -l |grep $rootdisk | awk '{print $3}');
+			sum=$(expr $sector + 100);
+			(echo n; echo p; echo; echo $sum; echo; echo w;) | fdisk $sysdisk;
+			checksysfs
+		fi
+	else
+		if [ $wifi5_mountpoint ] && [ "$wifi5_mountpoint" != '/mnt/wifi5' ]; then
+			umount $wifi5_mountpoint;
+		fi
+		if [ ! $wifi5_fstype ]; then
+			mkfs.ext4 -F $wifi5_disk
+		fi
+		fsck.ext4 -y -f $wifi5_disk
+
+		if [ ! $wifi5_mountpoint ]; then
+			if [ ! -e '/mnt/wifi5' ]; then
+				mkdir /mnt/wifi5;
+			fi
+			mount -t ext4 $wifi5_disk /mnt/wifi5;
+		fi
+		start_node
+	fi
+}
+
+start_service() {
+	if [ "$(uci -q get fstab.@global[0].anon_mount)" == "1" ]; then
+		uci set fstab.@global[0].anon_mount=0;
+		uci commit fstab;
+		/sbin/block umount;
+		reboot;
+	else
+		checksysfs
+	fi
+}

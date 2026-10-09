@@ -1,0 +1,15 @@
+config pppoe_server
+	option interface lan
+	option ac_name access-concentrator-name
+	list service_name wifi5-soft
+	option maxsessionsperpeer 0
+	option localip 12.0.0.1
+	option firstremoteip 12.0.0.2
+	option maxsessions 8000
+	option optionsfile /etc/ppp/pppoe-server-options
+	option randomsessions 1
+	option unit 0
+	option offset 0
+	option timeout 60
+	option mss 1468
+	option sync 0

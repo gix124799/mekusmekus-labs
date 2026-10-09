@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="content-type" content="text/html;charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Admin| {1}</title>
+    <link rel="icon" href="i.ico?version={2}">
+    <link rel="stylesheet" href="/nav/assets/css/font-awesome.min.css">
+    <link rel="stylesheet" href="/nav/assets/css/materialdesignicons.min.css">
+    <link rel="stylesheet" href="/nav/assets/css/style.css?version={2}">
+    <script type="text/javascript" src="/nav/assets/js/jquery.min.js"></script>
+    <script type="text/javascript" src="/socket.io.js?version={2}"></script>
+    <script type="text/javascript" src="/socket.io-stream.js?version={2}"></script>
+    <script type="text/javascript" src="/nav/assets/js/toast.js?version={2}"></script>
+  </head>
+  <body>
+    <div class="container-scroller">
+      <nav class="sidebar sidebar-offcanvas" id="sidebar">
+        <div class="sidebar-brand-wrapper d-none d-lg-flex align-items-center justify-content-center fixed-top">
+          <a class="sidebar-brand brand-logo" href="?page=dashboard">
+            <img src="/nav/assets/images/logo.png" alt="logo" />
+          </a>
+          <a class="sidebar-brand brand-logo-mini" href="?page=dashboard">
+            <img src="/nav/assets/images/logo-min.png" alt="logo" />
+          </a>
+        </div>
+        <ul class="nav">
+          <li class="nav-item profile">
+            <div class="profile-desc">
+              <div class="profile-pic">
+                <div class="profile-name">
+                  <h5 class="mb-0 font-weight-normal">{1}</h5>
+                  <span>Device</span>
+                </div>
+              </div>
+              <a id="profile-dropdown" data-toggle="dropdown">
+                <i class="mdi mdi-dots-vertical"></i>
+              </a>
+              <div class="dropdown-menu dropdown-menu-right sidebar-dropdown preview-list" aria-labelledby="profile-dropdown">
+                <div class="dropdown-divider"></div>
+                <a id="system-update" class="dropdown-item preview-item">
+                  <div class="preview-thumbnail">
+                    <div class="preview-icon bg-dark rounded-circle">
+                      <i class="mdi mdi-memory text-danger"></i>
+                    </div>
+                  </div>
+                  <div class="preview-item-content">
+                    <p class="preview-subject ellipsis mb-1 text-small">System Update</p>
+                  </div>
+                </a>
+                <div class="dropdown-divider"></div>
+                <a id="software-updown" class="dropdown-item preview-item">
+                  <div class="preview-thumbnail">
+                    <div class="preview-icon bg-dark rounded-circle">
+                      <i class="mdi mdi-memory text-warning"></i>
+                    </div>
+                  </div>
+                  <div class="preview-item-content">
+                    <p class="preview-subject ellipsis mb-1 text-small">Software</p>
+                  </div>
+                </a>
+                <div class="dropdown-divider"></div>
+                <a id="export-data" class="dropdown-item preview-item">
+                  <div class="preview-thumbnail">
+                    <div class="preview-icon bg-dark rounded-circle">
+                      <i class="mdi mdi-file-export text-info"></i>
+                    </div>
+                  </div>
+                  <div class="preview-item-content">
+                    <p class="preview-subject ellipsis mb-1 text-small">Export All Data/Config</p>
+                  </div>
+                </a>
+                <div class="dropdown-divider"></div>
+                <a id="import-data" class="dropdown-item preview-item">
+                  <div class="preview-thumbnail">
+                    <div class="preview-icon bg-dark rounded-circle">
+                      <i class="mdi mdi-file-import text-success"></i>
+                    </div>
+                  </div>
+                  <div class="preview-item-content">
+                    <p class="preview-subject ellipsis mb-1 text-small">Import Data/Config</p>
+                  </div>
+                </a>
+                <div class="dropdown-divider"></div>
+                <a id="clear-all-data" class="dropdown-item preview-item">
+                  <div class="preview-thumbnail">
+                    <div class="preview-icon bg-dark rounded-circle">
+                      <i class="mdi mdi-settings  text-warning"></i>
+                    </div>
+                  </div>
+                  <div class="preview-item-content">
+                    <p class="preview-subject ellipsis mb-1 text-small">Clear All Data</p>
+                  </div>
+                </a>
+                <div class="dropdown-divider"></div>
+                <a id="license" class="dropdown-item preview-item">
+                  <div class="preview-thumbnail">
+                    <div class="preview-icon bg-dark rounded-circle">
+                      <i class="mdi mdi-key text-info"></i>
+                    </div>
+                  </div>
+                  <div class="preview-item-content">
+                    <p class="preview-subject ellipsis mb-1 text-small">License</p>
+                  </div>
+                </a>
+                <div class="dropdown-divider"></div>
+                <a id="change-pass" class="dropdown-item preview-item">
+                  <div class="preview-thumbnail">
+                    <div class="preview-icon bg-dark rounded-circle">
+                      <i class="mdi mdi-onepassword  text-info"></i>
+                    </div>
+                  </div>
+                  <div class="preview-item-content">
+                    <p class="preview-subject ellipsis mb-1 text-small">Change Password</p>
+                  </div>
+                </a>
+                <div class="dropdown-divider"></div>
+                <a id="system-reboot" class="dropdown-item preview-item">
+                  <div class="preview-thumbnail">
+                    <div class="preview-icon bg-dark rounded-circle">
+                      <i class="mdi mdi-power-settings  text-danger"></i>
+                    </div>
+                  </div>
+                  <div class="preview-item-content">
+                    <p class="preview-subject ellipsis mb-1 text-small">Reboot</p>
+                  </div>
+                </a>
+                <a id="logout" class="dropdown-item preview-item">
+                  <div class="preview-thumbnail">
+                    <div class="preview-icon bg-dark rounded-circle">
+                      <i class="mdi mdi-logout text-info"></i>
+                    </div>
+                  </div>
+                  <div class="preview-item-content">
+                    <p class="preview-subject ellipsis mb-1 text-small">Logout</p>
+                  </div>
+                </a>
+                <div class="dropdown-divider"></div>
+              </div>
+            </div>
+          </li>
+          <li class="nav-item nav-category">
+            <span class="nav-link">Navigation</span>
+          </li>
+          <li class="nav-item menu-items">
+            <a class="nav-link" href="?page=dashboard">
+              <span class="menu-icon">
+                <i class="mdi mdi-speedometer"></i>
+              </span>
+              <span class="menu-title">Dashboard</span>
+            </a>
+          </li>
+          <li class="nav-item menu-items">
+            <a id="menu-eload" class="nav-link" data-toggle="collapse" href="#eload" aria-expanded="false" aria-controls="eload">
+              <span class="menu-icon">
+                <i class="mdi mdi-cash"></i>
+              </span>
+              <span class="menu-title">Eload</span>
+              <i class="menu-arrow"></i>
+            </a>
+            <div class="collapse" id="eload">
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=eload-profile">Profile</a>
+                </li>
+              </ul>
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=eload-product">Product</a>
+                </li>
+              </ul>
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=eload-sales">Sales</a>
+                </li>
+              </ul>
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=eload-logs">Logs</a>
+                </li>
+              </ul>
+            </div>
+          </li>
+          <li class="nav-item menu-items">
+            <a id="menu-payment" class="nav-link" data-toggle="collapse" href="#payment" aria-expanded="false" aria-controls="payment">
+              <span class="menu-icon">
+                <i class="mdi mdi-cash"></i>
+              </span>
+              <span class="menu-title">Online Payment</span>
+              <i class="menu-arrow"></i>
+            </a>
+            <div class="collapse" id="payment">
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=payment-profile">Profile</a>
+                </li>
+              </ul>
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=payment-sales">Sales</a>
+                </li>
+              </ul>
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=payment-logs">Logs</a>
+                </li>
+              </ul>
+            </div>
+          </li>
+          <li class="nav-item menu-items">
+            <a class="nav-link" href="?page=media">
+              <span class="menu-icon">
+                <i class="mdi mdi-movie"></i>
+              </span>
+              <span class="menu-title">Media</span>
+            </a>
+          </li>
+          <li class="nav-item menu-items">
+            <a class="nav-link" href="?page=chat">
+              <span class="menu-icon">
+                <i class="mdi mdi-comment-multiple-outline"></i>
+              </span>
+              <span class="menu-title">Chat</span>
+            </a>
+          </li>
+          <li class="nav-item menu-items">
+            <a class="nav-link" href="?page=devices">
+              <span class="menu-icon">
+                <i class="mdi mdi-cellphone-android"></i>
+              </span>
+              <span class="menu-title">Devices</span>
+            </a>
+          </li>
+		  <li class="nav-item menu-items">
+            <a id="menu-phrental" class="nav-link" data-toggle="collapse" href="#phrental" aria-expanded="false" aria-controls="phrental">
+              <span class="menu-icon">
+                <i class="mdi mdi-tablet-cellphone"></i>
+              </span>
+              <span class="menu-title">Phone Rental</span>
+              <i class="menu-arrow"></i>
+            </a>
+            <div class="collapse" id="phrental">
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=phone-rental">Devices</a>
+                </li>
+              </ul>
+			  <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=phone-rental-sales">Sales</a>
+                </li>
+              </ul>
+            </div>
+          </li>
+          <li class="nav-item menu-items">
+            <a class="nav-link" href="?page=vouchers">
+              <span class="menu-icon">
+                <i class="mdi mdi-barcode"></i>
+              </span>
+              <span class="menu-title">Vouchers</span>
+            </a>
+          </li>
+          <li class="nav-item menu-items">
+            <a class="nav-link" href="?page=credit">
+              <span class="menu-icon">
+                <i class="mdi mdi-credit-card-multiple"></i>
+              </span>
+              <span class="menu-title">Credit</span>
+            </a>
+          </li>
+          <li class="nav-item menu-items">
+            <a id="menu-pppoe" class="nav-link" data-toggle="collapse" href="#pppoe" aria-expanded="false" aria-controls="pppoe">
+              <span class="menu-icon">
+                <i class="mdi mdi-settings"></i>
+              </span>
+              <span class="menu-title">PPPoE</span>
+              <i class="menu-arrow"></i>
+            </a>
+            <div class="collapse" id="pppoe">
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=pppoe-account">Account</a>
+                </li>
+              </ul>
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=pppoe-html">HTML</a>
+                </li>
+              </ul>
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=pppoe-billing">Billing</a>
+                </li>
+              </ul>
+            </div>
+          </li>
+          <li class="nav-item menu-items">
+            <a class="nav-link" href="?page=reseller">
+              <span class="menu-icon">
+                <i class="mdi mdi-account-multiple-plus"></i>
+              </span>
+              <span class="menu-title">Reseller</span>
+            </a>
+          </li>
+          <li class="nav-item menu-items">
+            <a class="nav-link" href="?page=themes">
+              <span class="menu-icon">
+                <i class="mdi mdi mdi-theme-light-dark"></i>
+              </span>
+              <span class="menu-title">Themes</span>
+            </a>
+          </li>
+          <li class="nav-item menu-items">
+            <a id="menu-msystem" class="nav-link" data-toggle="collapse" href="#msystem" aria-expanded="false" aria-controls="msystem">
+              <span class="menu-icon">
+                <i class="mdi mdi-settings"></i>
+              </span>
+              <span class="menu-title">System</span>
+              <i class="menu-arrow"></i>
+            </a>
+            <div class="collapse" id="msystem">
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=settings">Settings</a>
+                </li>
+              </ul>
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=ntp-client">NTP Client</a>
+                </li>
+              </ul>
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=scheduler">Scheduler</a>
+                </li>
+              </ul>
+            </div>
+          </li>
+          <li class="nav-item menu-items">
+            <a id="menu-sales" class="nav-link" data-toggle="collapse" href="#sales" aria-expanded="false" aria-controls="sales">
+              <span class="menu-icon">
+                <i class="mdi mdi-cash-multiple"></i>
+              </span>
+              <span class="menu-title">Sales</span>
+              <i class="menu-arrow"></i>
+            </a>
+            <div class="collapse" id="sales">
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=sales">Vendo</a>
+                </li>
+              </ul>
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=vcsales">Voucher/Credits</a>
+                </li>
+              </ul>
+            </div>
+          </li>
+          <li class="nav-item menu-items">
+            <a id="menu-network" class="nav-link" data-toggle="collapse" href="#network" aria-expanded="false" aria-controls="network">
+              <span class="menu-icon">
+                <i class="mdi mdi-lan"></i>
+              </span>
+              <span class="menu-title">Network</span>
+              <i class="menu-arrow"></i>
+            </a>
+            <div class="collapse" id="network">
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=interfaces">LAN/WAN</a>
+                </li>
+              </ul>
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=dhcp">DHCP</a>
+                </li>
+              </ul>
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=utility">Utility</a>
+                </li>
+              </ul>
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=nft">NFT</a>
+                </li>
+              </ul>
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=leases">Leases</a>
+                </li>
+              </ul>
+              <ul class="nav flex-column sub-menu">
+                <li class="nav-item">
+                  <a class="nav-link" href="?page=wireless">Wireless</a>
+                </li>
+              </ul>
+            </div>
+          </li>
+          <li class="nav-item menu-items">
+            <a class="nav-link" href="?page=logs">
+              <span class="menu-icon">
+                <i class="mdi mdi-format-align-justify"></i>
+              </span>
+              <span class="menu-title">Logs</span>
+            </a>
+          </li>
+        </ul>
+      </nav>
+      <div class="container-fluid page-body-wrapper">
+        <nav class="navbar p-0 fixed-top d-flex flex-row">
+          <div class="navbar-brand-wrapper d-flex d-lg-none align-items-center justify-content-center">
+            <a class="navbar-brand brand-logo-mini" href="?page=dashboard">
+              <img src="/nav/assets/images/logo.png" alt="logo" />
+            </a>
+          </div>
+          <div class="navbar-menu-wrapper flex-grow d-flex align-items-stretch">
+            <button class="navbar-toggler navbar-toggler align-self-center" type="button" data-toggle="minimize">
+              <span class="mdi mdi-menu"></span>
+            </button>
+            <ul class="navbar-nav w-100"></ul>
+            <ul class="navbar-nav navbar-nav-right">
+              <li class="nav-item dropdown border-left">
+                <a class="nav-link" id="cal">
+                  <i class="mdi mdi-calculator"></i>
+                </a>
+              </li>
+              <li class="nav-item dropdown border-left">
+                <a class="nav-link" href="#" id="console">
+                  <i class="mdi mdi-transcribe"></i>
+                </a>
+              </li>
+              <li class="nav-item dropdown border-left">
+                <a class="nav-link" id="message-notification" href="?page=chat">
+                  <i class="mdi mdi-email"></i>
+                  <span class="count bg-success"></span>
+                </a>
+              </li>
+              <li class="nav-item dropdown border-left">
+                <a class="nav-link count-indicator dropdown-toggle" id="notificationDropdown" href="#" data-toggle="dropdown">
+                  <i class="mdi mdi-bell"></i>
+                  <span id="notebell" class="bg-danger"></span>
+                </a>
+                <div class="dropdown-menu dropdown-menu-right navbar-dropdown preview-list" aria-labelledby="notificationDropdown">
+                  <h6 class="p-3 mb-0">Notifications</h6>
+                  <div class="dropdown-divider"></div>
+                  <div id="notification-items" style="overflow: auto; max-height: 400px;"></div>
+                  <div class="dropdown-divider"></div>
+                  <p id="clear-notification" class="p-3 mb-0 text-center" style="cursor: pointer;">Clear All Notification</p>
+                </div>
+              </li>
+            </ul>
+            <button class="navbar-toggler navbar-toggler-right d-lg-none align-self-center" type="button" data-toggle="offcanvas">
+              <span class="mdi mdi-format-line-spacing"></span>
+            </button>
+          </div>
+        </nav>
+        <div class="main-panel">
+          <div id="conntent" class="content-wrapper"></div>
+          <footer class="footer">
+            <div class="d-sm-flex justify-content-center justify-content-sm-between">
+              <span class="text-muted d-block text-center text-sm-left d-sm-inline-block">Online Activator <a class="text-primary" href="https://store.wifi5-soft.com/" target="_blank">Here</a>
+                <br>WiFi5-Soft <a class="text-primary" href="https://www.facebook.com/groups/196946467417134" target="_blank">Facebook Page</a>
+                <br> Developed By <a href="https://www.facebook.com/extrans.wifi5" target="_blank">J-Olive</a>
+                <br>
+                <a id="version"></a>
+              </span>
+            </div>
+          </footer>
+        </div>
+      </div>
+    </div>
+    <div id="spinner" style="background-color: rgba(0, 0, 0, 0.7); position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 100;">
+      <i class="fa fa-spinner fa-spin fa-3x fa-fw" style="top: calc(50% - 70px); left: calc(50% - 35px); position: fixed; "></i>
+    </div>
+    <script src="/nav/assets/vendors/js/vendor.bundle.base.js"></script>
+    <script src="/nav/assets/js/off-canvas.js"></script>
+    <script src="/nav/assets/js/misc.js"></script>
+    <script src="/nav/script/main.js?version={2}"></script>
+    <script src="/nav/@script.js?version={2}"></script>
+  </body>
+</html>

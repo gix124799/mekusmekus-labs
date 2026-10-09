@@ -1,0 +1,62 @@
+location /files {
+	limit_conn perip 10;
+    limit_req zone=ip burst=30 delay=8;
+	autoindex_format jsonp;
+	autoindex on;
+	root /mnt/wifi5/pppoe;
+	index null;
+}
+
+location ~ ^/html/{
+        limit_conn perip 10;
+        limit_req zone=ip burst=30 delay=8;
+        root /mnt/wifi5;
+}
+
+location ~ \.(mp3|ico|map|css|jpg|png|js|woff|woff2|ttf|svg|apk) {
+        limit_conn perip 10;
+        limit_req zone=ip burst=30 delay=8;
+        root /tmp/i/public;
+}
+
+if ($request_uri ~ /admin/\?EIO ) {
+	set $sc "i";
+}
+
+if ($request_uri ~ /admin/+) { 
+  set $sc i$sc;
+}
+
+if ($sc = "i") { 
+  return 302 /admin?page=dashboard;
+}
+
+location / {
+    limit_conn perip 10;
+    limit_req zone=ip burst=30 delay=8;
+    try_files $uri @backend;
+}
+
+location @backend {
+    proxy_pass http://backend;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header Host $host;
+	proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
+
+location /tty-terminal {
+    proxy_pass http://127.0.0.1:7681/$1;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header Host $host;
+	proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
+
+error_page 502 /error.html;

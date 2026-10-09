@@ -1,0 +1,13 @@
+
+config system
+	option timezone 'PST-8'
+	option ttylogin '1'
+	option log_size '64'
+	option urandom_seed '0'
+	option hostname 'wifi5-soft'
+
+config timeserver 'ntp'
+	option enabled '1'
+	option enable_server '0'
+	list server '132.163.97.3'
+	list server '202.90.132.242'
