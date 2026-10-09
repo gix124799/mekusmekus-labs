@@ -71,7 +71,7 @@ function clientPage() {
 </div>
 </div>
 </div>
-<div id="spinner" class="spin"><i class="fa fa-spinner fa-spin fa-3x fa-fw" style="top:calc(50% - 70px);left:calc(50% - 35px);position:fixed;"></i></div>
+<div id="spinner" class="spin" style="display:none;"><i class="fa fa-spinner fa-spin fa-3x fa-fw" style="top:calc(50% - 70px);left:calc(50% - 35px);position:fixed;"></i></div>
 <script src="/theme/js/vendor.bundle.base.js"></script>
 <script src="/theme/js/off-canvas.js"></script>
 <script src="/theme/js/misc.js"></script>
