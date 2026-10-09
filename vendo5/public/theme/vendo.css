@@ -1,0 +1,23 @@
+:root{--bg:#050a1a;--panel:#0b1633;--line:#15407a;--cyan:#2aa7ff;--glow:#38d0ff;--gold:#ffb21e;--text:#eaf4ff;--mute:#8aa6c8}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(circle at 50% -10%,#0d2a5c,var(--bg) 60%) fixed;color:var(--text);font:16px/1.4 system-ui,sans-serif;min-height:100vh}
+.wrap{max-width:460px;margin:0 auto;padding:12px}
+.wrap.wide{max-width:760px}
+.banner{width:100%;border-radius:14px;border:2px solid var(--cyan);box-shadow:0 0 18px #2aa7ff66;display:block}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin-top:14px;box-shadow:0 0 14px #2aa7ff22}
+h2{margin:0 0 10px;font-size:14px;letter-spacing:.12em;text-transform:uppercase;color:var(--glow)}
+.big{font-size:44px;font-weight:800;text-align:center;margin:6px 0;color:#fff;text-shadow:0 0 12px var(--cyan)}
+.state{text-align:center;color:var(--mute)}
+.on{color:#3dff9a}
+button{width:100%;padding:14px;border:0;border-radius:12px;font:800 18px system-ui;cursor:pointer;color:#1a0f00;background:linear-gradient(#ffd24a,var(--gold));box-shadow:0 0 14px #ffb21e88}
+button.ghost{background:none;color:var(--text);border:1px solid var(--line);box-shadow:none;font-size:14px;padding:8px;width:auto}
+input{width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);font-size:16px}
+label{color:var(--mute);font-size:13px}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line)}
+th{color:var(--mute);font-size:12px;text-transform:uppercase}
+.err{color:#ff6b6b}
+.top{display:flex;justify-content:space-between;align-items:center;margin-top:14px}
+.top img{width:44px;height:44px;border-radius:50%}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--panel);border:1px solid var(--cyan);padding:10px 18px;border-radius:10px;box-shadow:0 0 14px var(--cyan)}
+.tag{text-align:center;color:var(--mute);font-size:12px;margin:18px 0}

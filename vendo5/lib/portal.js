@@ -4,102 +4,59 @@ const path = require('node:path');
 
 const PAY_INTENT_TTL_MS = 10000;
 const THEME_DIR = path.join(__dirname, '..', 'public', 'theme');
-const THEME_TYPES = { '.css': 'text/css', '.js': 'text/javascript', '.woff2': 'font/woff2', '.woff': 'font/woff', '.png': 'image/png', '.ico': 'image/x-icon' };
+const THEME_TYPES = { '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg' };
 
-// Full real page structure, verbatim from the decrypted WiFi5-Soft client
-// theme (legacy/wifi5-soft/frontend-decrypted/public/client/defualt-theme/
-// index.html) — a hand-trimmed version broke the real CSS's layout
-// assumptions (sidebar/navbar/footer missing while their classes
-// (container-scroller/main-panel/content-wrapper) stayed, clipping
-// content). Dropped only what's genuinely unrecoverable or unused:
-// socket.io (no realtime backend), jquery.flot (no bandwidth graph),
-// client/script/{tools,chat,*}.js (empty/obfuscated in the original),
-// and the {2}/{4} license-injection placeholders.
-function clientPage() {
+function shell(title, body, script = '') {
   return `<!DOCTYPE html>
 <html lang="en">
-<meta http-equiv="content-type" content="text/html;charset=utf-8" />
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-<title>WiFi5-Soft| Vendo</title>
-<link rel="icon" href="/theme/img/i.ico">
-<link rel="stylesheet" href="/theme/css/font-awesome.min.css">
-<link rel="stylesheet" href="/theme/css/materialdesignicons.min.css">
-<link rel="stylesheet" href="/theme/css/vendor.bundle.base.css">
-<link rel="stylesheet" href="/theme/css/style.css">
-<script src="/theme/js/jquery.min.js"></script>
-<script src="/theme/js/toast.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${title}</title>
+<link rel="icon" href="/theme/favicon.png">
+<link rel="stylesheet" href="/theme/vendo.css">
 </head>
 <body>
-<div class="container-scroller">
-<nav class="sidebar sidebar-offcanvas" id="sidebar" style="z-index:999999;">
-<div class="sidebar-brand-wrapper d-none d-lg-flex align-items-center justify-content-center fixed-top">
-<a class="sidebar-brand brand-logo" href="?page=dashboard"><img src="/theme/img/logo.png" alt="logo" style="object-fit:cover;"/></a>
-<a class="sidebar-brand brand-logo-mini" href="?page=dashboard"><img src="/theme/img/logo-min.png" alt="logo" style="object-fit:cover;"/></a>
-</div>
-<ul class="nav">
-<li class="nav-item nav-category"><span class="nav-link">Navigation</span></li>
-<li class="nav-item menu-items"><a class="nav-link" href="?page=dashboard"><span class="menu-icon"><i class="mdi mdi-speedometer"></i></span><span class="menu-title">Dashboard</span></a></li>
-<li id="movie-nav" style="display:none;" class="nav-item menu-items"><a class="nav-link" href="?page=media"><span class="menu-icon"><i class="mdi mdi-movie"></i></span><span class="menu-title">Movies</span></a></li>
-<li id="eload-parent" class="nav-item menu-items"><a class="nav-link" href="?page=eload"><span class="menu-icon"><i class="mdi mdi-cash"></i></span><span class="menu-title">E-load</span></a></li>
-<li class="nav-item menu-items"><a class="nav-link" href="?page=logs"><span class="menu-icon"><i class="mdi mdi-format-align-justify"></i></span><span class="menu-title">Logs</span></a></li>
-</ul>
-</nav>
-<div class="container-fluid page-body-wrapper">
-<nav class="navbar p-0 fixed-top d-flex flex-row">
-<div class="navbar-brand-wrapper d-flex d-lg-none align-items-center justify-content-center">
-<a class="navbar-brand brand-logo-mini" href="?page=dashboard"><img src="/theme/img/logo.png" alt="logo" style="object-fit:cover;"/></a>
-</div>
-<div class="navbar-menu-wrapper flex-grow d-flex align-items-stretch">
-<button class="navbar-toggler navbar-toggler align-self-center" type="button" data-toggle="minimize"><span class="mdi mdi-menu"></span></button>
-<ul class="navbar-nav w-100"></ul>
-<ul class="navbar-nav navbar-nav-right">
-<li class="nav-item dropdown border-left"><a class="nav-link" href="/apk/wifi5-softweb.apk"><i class="mdi mdi-android" style="color:#00d600;"></i></a></li>
-<li class="nav-item dropdown border-left" style="height:35px;padding:0 5px;display:flex;align-items:center;"><span id="credit" class="menu-title" style="white-space:nowrap;font-size:18px;">&#8369; 0.00</span></li>
-</ul>
-<button class="navbar-toggler navbar-toggler-right d-lg-none align-self-center" type="button" data-toggle="offcanvas"><span class="mdi mdi-format-line-spacing"></span></button>
-</div>
-</nav>
-<div class="main-panel">
-<div id="conntent" class="content-wrapper"></div>
-<footer class="footer">
-<div class="d-sm-flex justify-content-center justify-content-sm-between">
-<span class="text-muted d-block text-center text-sm-left d-sm-inline-block">WiFi5-Soft <a class="text-primary" href="https://www.facebook.com/groups/196946467417134" target="_blank">Facebook Page</a><br> Developed By <a href="https://www.facebook.com/extrans.wifi5" target="_blank">J-Olive</a><br><a id="version"></a></span>
-</div>
-</footer>
-</div>
-</div>
-</div>
-<div id="spinner" class="spin" style="display:none;"><i class="fa fa-spinner fa-spin fa-3x fa-fw" style="top:calc(50% - 70px);left:calc(50% - 35px);position:fixed;"></i></div>
-<script src="/theme/js/vendor.bundle.base.js"></script>
-<script src="/theme/js/off-canvas.js"></script>
-<script src="/theme/js/misc.js"></script>
+${body}
 <script>
-// Real widget markup recovered from global.js's creditbox/clientstatus
-// (legacy/wifi5-soft/frontend-decrypted/public/client/defualt-theme/
-// global.js) — the fragment contents are theirs, this assembly/wiring is
-// ours, since the original dashboard.js that would have done this is
-// empty in the decrypted archive (server-injected at runtime, never static).
-var clientstatus = $('<div class="card" style="min-height:86px;margin-bottom:10px;"><h4 class="card-title" id="title-status" style="display:flex;border-bottom:1px solid;padding:5px;margin:5px 10px;"></h4><div class="card-body" style="display:flex;padding:16px 20px;justify-content:space-around;"><div style="margin-right:20px;width:65%;display:grid;justify-content:center;padding-left:15px;"><div class="row" style="align-content:flex-end;"><div class="d-flex align-items-center align-self-start"><h3 class="mb-0 text-success" id="client-duration"></h3></div></div><h6 class="text-muted font-weight-normal">Current Duration</h6></div></div></div>');
-var creditbox = $('<div class="card" style="min-height:86px;"><div class="card-body" style="display:flex;padding:10px 20px;justify-content:space-around;"><div style="margin-right:20px;width:75%;display:grid;justify-content:center;padding-left:15px;"><div class="row" style="align-content:flex-end;"><div class="d-flex align-items-center align-self-start"><h3 class="mb-0 text-info" id="client-credit"></h3></div></div></div><div id="insert-btn-parent" style="display:grid;align-items:center;"><button id="client-insert-coin" class="btn btn-outline-warning btn-icon-text" style="height:auto;"><i class="mdi mdi-coin btn-icon-prepend mdi-48px"></i><span id="insert1" class="d-inline-block text-left blink" style="margin:auto;font-size:18px;font-weight:bold;">INSERT COIN</span></button></div></div></div>');
-$('#conntent').append(clientstatus).append(creditbox);
-$('#client-insert-coin').on('click', function () {
-  $.post('/api/pay-intent').done(function () { toastada.info('Insert your coin now.'); });
-});
-function poll() {
-  $.getJSON('/api/status').done(function (s) {
-    $('#title-status').text(s.active ? 'Online' : 'Offline');
-    $('#client-duration').text(s.active ? Math.floor(s.remainingSeconds / 60) + 'm ' + (s.remainingSeconds % 60) + 's' : '00:00');
-    $('#client-credit').text(s.active ? 'Connected' : 'Insert coin to continue');
-    $('#credit').html('&#8369; ' + (s.active ? s.remainingSeconds : 0));
-  });
+var toastada = { info: toast, success: toast, warning: toast, error: toast };
+function toast(msg) {
+  var t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(function () { t.remove(); }, 3000);
 }
-poll();
-setInterval(poll, 2000);
+function post(url, data) {
+  return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data || {}) }).then(function (r) { return r.json(); });
+}
+${script}
 </script>
 </body>
 </html>`;
+}
+
+function clientPage() {
+  return shell('MekusMekus WiFi', `<div class="wrap">
+<img class="banner" src="/theme/banner.jpg" alt="MekusMekus Labs">
+<div class="card">
+<h2 id="title-status">Offline</h2>
+<div class="big" id="client-duration">00:00</div>
+<div class="state" id="client-credit">Insert coin to continue</div>
+</div>
+<div class="card"><button id="client-insert-coin">INSERT COIN</button></div>
+<div class="tag">They Invent. We Reinvent.</div>
+</div>`, `
+document.getElementById('client-insert-coin').onclick = function () {
+  post('/api/pay-intent').then(function () { toastada.info('Insert your coin now.'); });
+};
+function poll() {
+  fetch('/api/status').then(function (r) { return r.json(); }).then(function (s) {
+    var m = Math.floor(s.remainingSeconds / 60), sec = s.remainingSeconds % 60;
+    document.getElementById('title-status').textContent = s.active ? 'Online' : 'Offline';
+    document.getElementById('title-status').className = s.active ? 'on' : '';
+    document.getElementById('client-duration').textContent = s.active ? m + 'm ' + sec + 's' : '00:00';
+    document.getElementById('client-credit').textContent = s.active ? 'Connected' : 'Insert coin to continue';
+  });
+}
+poll(); setInterval(poll, 2000);`);
 }
 
 function escapeHtml(s) {
@@ -107,106 +64,45 @@ function escapeHtml(s) {
 }
 
 function loginForm() {
-  return `<div id="admin-login-form" class="card" style="max-width:360px;margin:60px auto;">
-<div class="card-body">
-<h4 class="card-title">Admin Login</h4>
-<p id="login-error" class="text-danger" style="display:none;">Invalid username or password.</p>
-<div class="form-group"><label>Username</label><input id="login-username" class="form-control" type="text"></div>
-<div class="form-group"><label>Password</label><input id="login-password" class="form-control" type="password"></div>
-<button id="login-submit" class="btn btn-outline-warning">Login</button>
-</div>
-</div>
-<script>
-$('#login-submit').on('click', function () {
-  $.ajax({ url: '/admin/login', method: 'POST', contentType: 'application/json',
-    data: JSON.stringify({ username: $('#login-username').val(), password: $('#login-password').val() }) })
-    .done(function (r) { if (r.ok) location.reload(); else $('#login-error').show(); });
-});
-</script>`;
+  return `<div id="admin-login-form" class="card">
+<h2>Admin Login</h2>
+<p id="login-error" class="err" style="display:none;">Invalid username or password.</p>
+<label>Username</label><input id="login-username" type="text" autocomplete="username">
+<label>Password</label><input id="login-password" type="password" autocomplete="current-password">
+<button id="login-submit">LOGIN</button>
+</div>`;
 }
 
-// Real session data (mac, credit, remaining time) from session.all() — this
-// is real device state, not a mock. Every other menu item (Eload, Vouchers,
-// PPPoE, Network, Sales, Logs) still has no backend; that's a future
-// sub-project, same as before.
+const LOGIN_JS = `
+document.getElementById('login-submit').onclick = function () {
+  post('/admin/login', { username: document.getElementById('login-username').value, password: document.getElementById('login-password').value })
+    .then(function (r) { if (r.ok) location.reload(); else document.getElementById('login-error').style.display = 'block'; });
+};`;
+
+const LOGOUT_JS = `
+document.getElementById('logout-btn').onclick = function () { post('/admin/logout').then(function () { location.reload(); }); };`;
+
+// Real session data (mac, credit, remaining time) from session.all().
 function dashboardContent(sessionsByMac, now = Date.now()) {
-  const rows = Object.values(sessionsByMac).map((s) => {
+  const list = Object.values(sessionsByMac);
+  const total = list.reduce((n, s) => n + s.creditPesos, 0);
+  const rows = list.map((s) => {
     const remaining = Math.max(0, Math.round((s.expiresAt - now) / 1000));
     return `<tr><td>${escapeHtml(s.mac)}</td><td>${s.creditPesos}</td><td>${remaining}s</td></tr>`;
   }).join('');
-  return `<div class="card" style="margin-top:20px;">
-<div class="card-body">
-<h4 class="card-title">Active Sessions</h4>
-<table class="table"><thead><tr><th>MAC</th><th>Credit (&#8369;)</th><th>Remaining</th></tr></thead>
+  return `<div class="card">
+<h2>Active Sessions: ${list.length} &middot; Credit: &#8369;${total}</h2>
+<table><thead><tr><th>MAC</th><th>Credit (&#8369;)</th><th>Remaining</th></tr></thead>
 <tbody id="sessions-tbody">${rows || '<tr><td colspan="3">No active sessions</td></tr>'}</tbody></table>
-<button id="logout-btn" class="btn btn-outline-danger">Logout</button>
 </div>
-</div>
-<script>
-$('#logout-btn').on('click', function () {
-  $.ajax({ url: '/admin/logout', method: 'POST' }).done(function () { location.reload(); });
-});
-</script>`;
+<div class="top"><span></span><button id="logout-btn" class="ghost">Logout</button></div>`;
 }
 
-// Real admin ("nav") shell, verbatim structure. Login is real (lib/admin.js
-// + config/admin.json); the dashboard shows real session data. Every other
-// menu item (Eload, Vouchers, PPPoE, Network, Sales, Logs) has no backend
-// yet — deferred to a future sub-project, same scope line as before.
-function adminPage(content) {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta http-equiv="content-type" content="text/html;charset=utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-<title>Admin| Vendo</title>
-<link rel="icon" href="/theme/img/i.ico">
-<link rel="stylesheet" href="/theme/css/font-awesome.min.css">
-<link rel="stylesheet" href="/theme/css/materialdesignicons.min.css">
-<link rel="stylesheet" href="/theme/css/admin-style.css">
-<script src="/theme/js/jquery.min.js"></script>
-<script src="/theme/js/toast.js"></script>
-</head>
-<body>
-<div class="container-scroller">
-<nav class="sidebar sidebar-offcanvas" id="sidebar">
-<div class="sidebar-brand-wrapper d-none d-lg-flex align-items-center justify-content-center fixed-top">
-<a class="sidebar-brand brand-logo" href="?page=dashboard"><img src="/theme/img/logo.png" alt="logo"/></a>
-<a class="sidebar-brand brand-logo-mini" href="?page=dashboard"><img src="/theme/img/logo-min.png" alt="logo"/></a>
-</div>
-<ul class="nav">
-<li class="nav-item profile"><div class="profile-desc"><div class="profile-pic"><div class="profile-name"><h5 class="mb-0 font-weight-normal">Vendo</h5><span>Device</span></div></div></div></li>
-<li class="nav-item nav-category"><span class="nav-link">Navigation</span></li>
-<li class="nav-item menu-items"><a class="nav-link" href="?page=dashboard"><span class="menu-icon"><i class="mdi mdi-speedometer"></i></span><span class="menu-title">Dashboard</span></a></li>
-<li class="nav-item menu-items"><a class="nav-link" href="?page=eload"><span class="menu-icon"><i class="mdi mdi-cash"></i></span><span class="menu-title">Eload</span></a></li>
-<li class="nav-item menu-items"><a class="nav-link" href="?page=vouchers"><span class="menu-icon"><i class="mdi mdi-barcode"></i></span><span class="menu-title">Vouchers</span></a></li>
-<li class="nav-item menu-items"><a class="nav-link" href="?page=credit"><span class="menu-icon"><i class="mdi mdi-credit-card-multiple"></i></span><span class="menu-title">Credit</span></a></li>
-<li class="nav-item menu-items"><a class="nav-link" href="?page=pppoe"><span class="menu-icon"><i class="mdi mdi-settings"></i></span><span class="menu-title">PPPoE</span></a></li>
-<li class="nav-item menu-items"><a class="nav-link" href="?page=network"><span class="menu-icon"><i class="mdi mdi-lan"></i></span><span class="menu-title">Network</span></a></li>
-<li class="nav-item menu-items"><a class="nav-link" href="?page=sales"><span class="menu-icon"><i class="mdi mdi-cash-multiple"></i></span><span class="menu-title">Sales</span></a></li>
-<li class="nav-item menu-items"><a class="nav-link" href="?page=logs"><span class="menu-icon"><i class="mdi mdi-format-align-justify"></i></span><span class="menu-title">Logs</span></a></li>
-</ul>
-</nav>
-<div class="container-fluid page-body-wrapper">
-<nav class="navbar p-0 fixed-top d-flex flex-row">
-<div class="navbar-menu-wrapper flex-grow d-flex align-items-stretch">
-<button class="navbar-toggler navbar-toggler align-self-center" type="button" data-toggle="minimize"><span class="mdi mdi-menu"></span></button>
-<ul class="navbar-nav w-100"></ul>
-<button class="navbar-toggler navbar-toggler-right d-lg-none align-self-center" type="button" data-toggle="offcanvas"><span class="mdi mdi-format-line-spacing"></span></button>
-</div>
-</nav>
-<div class="main-panel">
-<div id="conntent" class="content-wrapper">${content}</div>
-<footer class="footer"><div class="d-sm-flex justify-content-center justify-content-sm-between"><span class="text-muted">WiFi5-Soft admin</span></div></footer>
-</div>
-</div>
-</div>
-<script src="/theme/js/vendor.bundle.base.js"></script>
-<script src="/theme/js/off-canvas.js"></script>
-<script src="/theme/js/admin-misc.js"></script>
-</body>
-</html>`;
+function adminPage(content, loggedIn) {
+  return shell('Admin | MekusMekus Vendo', `<div class="wrap wide">
+<img class="banner" src="/theme/banner.jpg" alt="MekusMekus Labs">
+${content}
+</div>`, loggedIn ? LOGOUT_JS : LOGIN_JS);
 }
 
 const ADMIN_COOKIE = 'vendo5_admin';
@@ -299,7 +195,7 @@ function createServer({ session, arp, ratePesosPerMinute, adminAuth }) {
 
     if (req.method === 'GET' && (req.url === '/admin' || req.url.startsWith('/admin?'))) {
       res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(adminPage(isAdminSession() ? dashboardContent(session.all()) : loginForm()));
+      res.end((isAdminSession() ? adminPage(dashboardContent(session.all()), true) : adminPage(loginForm(), false)));
       return;
     }
 

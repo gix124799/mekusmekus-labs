@@ -68,24 +68,6 @@ test('GET / always serves the real page shell with the real insert-coin button',
   server.close();
 });
 
-// Regression: the real theme's .spin CSS class (public/theme/css/
-// style.css) has no display:none by default -- it's a fixed, full-screen,
-// z-index:100 overlay meant to be hidden by JS we don't have (the
-// original's dashboard.js, empty in the decrypted archive). Without an
-// explicit display:none, it silently blocks every click on the page,
-// including INSERT COIN -- looks exactly like a dead button.
-test('GET / does not leave the full-screen spinner overlay visible (would block all clicks)', async () => {
-  const { server } = createServer({ session: fakeSession(false), arp: fakeArp('m1'), ratePesosPerMinute: 1 });
-  const port = await listen(server);
-  try {
-    const res = await request(port, 'GET', '/');
-    const spinnerTag = /<div id="spinner"[^>]*>/.exec(res.body)[0];
-    assert.match(spinnerTag, /display:\s*none/);
-  } finally {
-    server.close();
-  }
-});
-
 // Regression: the inline script called toastada.show(msg, type), but the
 // real toast.js (public/theme/js/toast.js) only exposes .success/.info/
 // .warning/.error -- no .show() at all. That threw inside the click
