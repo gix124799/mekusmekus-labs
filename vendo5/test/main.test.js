@@ -16,6 +16,8 @@ function run(env) {
   const exited = new Promise((r) => p.on('exit', (code) => r(code)));
   return { p, exited, out: () => out };
 }
+// Poll the child's stdout (up to 8s, no throw) instead of fixed sleeps: fixed sleeps race on a loaded machine.
+const waitFor = async (r, re) => { for (let i = 0; i < 160 && !re.test(r.out()); i++) await new Promise((x) => setTimeout(x, 50)); };
 const tmpDir = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'v5main-')), 'cfg');
 
 // Task 5 added real-hardware gpio.exportPin to main.js's startup path; any
@@ -93,11 +95,11 @@ test('portal listens and serves the landing page; coin pulse with no pay-intent 
   // settle: the first stdout line doesn't guarantee the gpio fs.watch
   // (inotify) registration is live yet; without this the write below
   // races the watcher setup and the pulse is silently missed.
-  await new Promise((res) => setTimeout(res, 50));
+  await waitFor(r, /portal listening/); // gpio watcher is registered before the listening event
 
   // trigger a coin pulse with no pending pay-intent
   fs.writeFileSync(path.join(pinDir, 'value'), '1');
-  await new Promise((res) => setTimeout(res, 200));
+  await waitFor(r, /orphan/);
 
   r.p.kill('SIGTERM');
   await r.exited;
@@ -131,7 +133,7 @@ test('a paid coin pulse credits the session, calls firewall allow, and persists 
     VENDO5_ARP_FAKE_MAC: mac,
   });
   await new Promise((res) => r.p.stdout.once('data', res));
-  await new Promise((res) => setTimeout(res, 50)); // gpio watcher settle, see orphan test above
+  await waitFor(r, /portal listening/); // gpio watcher settle, see orphan test above
 
   const portLine = /"message":"portal listening".*"port":(\d+)|"port":(\d+).*"message":"portal listening"/.exec(r.out());
   const port = Number(portLine[1] || portLine[2]);
@@ -142,7 +144,7 @@ test('a paid coin pulse credits the session, calls firewall allow, and persists 
   });
 
   fs.writeFileSync(path.join(pinDir, 'value'), '1'); // coin pulse
-  await new Promise((res) => setTimeout(res, 200));
+  await waitFor(r, /firewall allow/);
 
   r.p.kill('SIGTERM');
   await r.exited;
@@ -160,7 +162,7 @@ test('a paid coin pulse credits the session, calls firewall allow, and persists 
 test('admin login with the default config credentials actually works end to end', async () => {
   const r = run({ VENDO5_CONFIG_DIR: tmpDir(), VENDO5_DEFAULTS_DIR: DEFAULTS, VENDO5_GPIO_BASE: fakeGpioBase(), VENDO5_PORTAL_PORT: '0' });
   await new Promise((res) => r.p.stdout.once('data', res));
-  await new Promise((res) => setTimeout(res, 50)); // settle: first data chunk may be only "vendo5 started"
+  await waitFor(r, /portal listening/);
   const portLine = /"port":(\d+)/.exec(r.out());
   const port = Number(portLine[1]);
 
@@ -179,4 +181,20 @@ test('admin login with the default config credentials actually works end to end'
     r.p.kill('SIGTERM');
     await r.exited;
   }
+});
+
+test('main.js keeps serving the portal when the coin gpio pin is unavailable', async () => {
+  const { spawn } = require('node:child_process');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vendo5-nogpio-'));
+  const child = spawn(process.execPath, [path.join(__dirname, '..', 'main.js')], {
+    env: { ...process.env, VENDO5_CONFIG_DIR: path.join(dir, 'cfg'), VENDO5_DEFAULTS_DIR: path.join(__dirname, '..', 'config'),
+      VENDO5_SESSION_FILE: path.join(dir, 's.json'), VENDO5_GPIO_BASE: path.join(dir, 'missing-gpio'),
+      VENDO5_PORTAL_PORT: '3997', VENDO5_FIREWALL_CMD: 'noop', VENDO5_ARP_FAKE_MAC: 'm1' },
+  });
+  try {
+    await new Promise((r) => setTimeout(r, 1200));
+    const res = await fetch('http://127.0.0.1:3997/api/status');
+    assert.equal(res.status, 200);
+  } finally { child.kill(); }
 });

@@ -67,24 +67,29 @@ server.listen(portalPort, () => {
   log('info', 'portal listening', { port: server.address().port });
 });
 
-const gpio = createGpio(gpioBase);
-gpio.exportPin(coin_pin);
-gpio.watchPin(coin_pin, 'in', 'rising', (value) => {
-  if (value !== 1) return;
-  const mac = consumePendingPayer();
-  if (!mac) {
-    log('warn', 'orphan coin pulse: no pending payer', { pin: coin_pin });
-    return;
-  }
-  session.addCredit(mac, pulse_value_pesos, pesos_per_minute);
-  try {
-    firewall.allow(mac);
-    log('info', 'firewall allow', { mac });
-  } catch (e) {
-    log('error', 'firewall allow failed', { mac, error: e.message });
-  }
-  session.save();
-});
+// A missing/unwritable coin pin must not take the portal and admin down with it.
+try {
+  const gpio = createGpio(gpioBase);
+  gpio.exportPin(coin_pin);
+  gpio.watchPin(coin_pin, 'in', 'rising', (value) => {
+    if (value !== 1) return;
+    const mac = consumePendingPayer();
+    if (!mac) {
+      log('warn', 'orphan coin pulse: no pending payer', { pin: coin_pin });
+      return;
+    }
+    session.addCredit(mac, pulse_value_pesos, pesos_per_minute);
+    try {
+      firewall.allow(mac);
+      log('info', 'firewall allow', { mac });
+    } catch (e) {
+      log('error', 'firewall allow failed', { mac, error: e.message });
+    }
+    session.save();
+  });
+} catch (e) {
+  log('error', 'coin gpio unavailable; portal runs without coin input', { pin: coin_pin, error: e.message });
+}
 
 setInterval(() => {
   const due = session.expireDue();
