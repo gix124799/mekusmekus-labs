@@ -1,0 +1,7 @@
+{
+  "name": "vendo5",
+  "version": "0.1.0",
+  "private": true,
+  "main": "main.js",
+  "scripts": { "test": "node --test" }
+}
