@@ -3,5 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "main": "main.js",
-  "scripts": { "test": "node --test" }
+  "scripts": {
+    "test": "node --test",
+    "dev": "node --watch --watch-path=lib --watch-path=main.js --watch-path=config main.js"
+  }
 }

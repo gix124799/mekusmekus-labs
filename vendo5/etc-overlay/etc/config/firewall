@@ -1,0 +1,34 @@
+
+# Minimal OpenWrt firewall config. Zone/forwarding rules are
+# intentionally NOT the standard "lan accept / wan reject, lan->wan
+# forward" template — that would let every unpaid client straight
+# through. All the actual gating lives in the custom nft ruleset
+# (vendo5-firewall.nft), loaded below via `config include`, which
+# replaces the default lan->wan forward with the MAC-allowlist policy
+# lib/firewall.js's allow()/revoke() populate at runtime.
+
+config defaults
+	option input 'ACCEPT'
+	option output 'ACCEPT'
+	option forward 'DROP'
+	option synflood_protect '1'
+
+config zone
+	option name 'lan'
+	option input 'ACCEPT'
+	option output 'ACCEPT'
+	option forward 'DROP'
+	list network 'lan'
+
+config zone
+	option name 'wan'
+	option input 'DROP'
+	option output 'ACCEPT'
+	option forward 'DROP'
+	list network 'wan'
+	option masq '0'
+
+config include 'vendo5'
+	option type 'nftables'
+	option path '/etc/vendo5-firewall.nft'
+	option reload '1'

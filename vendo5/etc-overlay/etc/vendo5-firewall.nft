@@ -1,0 +1,46 @@
+# vendo5 firewall ruleset — creates the table/set/chains that
+# lib/firewall.js's runtime `nft add/delete element` and `nft flush set`
+# calls assume already exist. Loaded via /etc/config/firewall's
+# `config include` (see etc-overlay/etc/config/firewall), reloaded
+# whenever the OpenWrt firewall itself reloads.
+#
+# Policy: a client's MAC in `allowed` gets full internet (forward +
+# masquerade). Everyone else: plain HTTP (port 80) to ANY destination is
+# redirected to the portal, regardless of which site they were trying to
+# reach (standard pisowifi/captive-portal technique — works without any
+# DNS hijacking, so paid clients' real DNS resolution is untouched).
+# Everything else for an unpaid client (HTTPS, other ports/protocols) is
+# dropped — there is no way to show a portal page over HTTPS without a
+# client-trusted certificate, which is out of scope; this is the same
+# limitation every captive portal has. Modern OSes auto-detect this via a
+# plain-HTTP connectivity-check URL and pop the "sign in to network"
+# browser on their own.
+#
+# shortcut: interface names (lan_if/wan_if below) are placeholders for
+# the names the real board.d/network config resolves to — fill in from
+# /etc/config/network once confirmed on real hardware (see that file's
+# own TODO). Verify with `nft list ruleset` after boot.
+
+table inet vendo5 {
+	set allowed {
+		type ether_addr
+	}
+
+	chain dstnat {
+		type nat hook prerouting priority dstnat; policy accept;
+		iifname "br-lan" ether saddr != @allowed tcp dport 80 dnat to 10.0.0.1:3000
+	}
+
+	chain forward {
+		type filter hook forward priority filter; policy drop;
+		iifname "br-lan" oifname "eth0_TODO_VERIFY" ether saddr @allowed accept
+		# unpaid traffic to the portal's own app (port 3000) and to the
+		# router itself must still reach it — only gate LAN->WAN forwarding.
+		iifname "br-lan" oifname "br-lan" accept
+	}
+
+	chain postrouting {
+		type nat hook postrouting priority srcnat; policy accept;
+		oifname "eth0_TODO_VERIFY" ether saddr @allowed masquerade
+	}
+}

@@ -1,0 +1,35 @@
+
+# vendo5 network provisioning. Topology (per owner): Orange Pi One's
+# built-in Ethernet = WAN (upstream internet, DHCP client). A USB-to-LAN
+# adapter's port = LAN, bridged as 'br-lan' at a fixed 10.0.0.1/24. A
+# separate standalone access point device plugs into that LAN port over
+# Ethernet (AP mode) — no Wi-Fi config needed on this device itself.
+#
+# shortcut: 'eth0' (WAN) and 'eth1' (the USB adapter's LAN port) are
+# assumed interface names, not yet confirmed on real hardware — the
+# owner doesn't know the USB adapter's exact chipset. If wrong on boot,
+# this is a one-line fix: `ip link` on the real device to find the
+# actual names, then update option 'ifname' below. Upgrade to a
+# hotplug-based dynamic binding only if interface names turn out to be
+# unstable across boots/adapter swaps.
+
+config interface 'loopback'
+	option device 'lo'
+	option proto 'static'
+	option ipaddr '127.0.0.1'
+	option netmask '255.0.0.0'
+
+config interface 'wan'
+	option device 'eth0_TODO_VERIFY'
+	option proto 'dhcp'
+
+config device
+	option type 'bridge'
+	option name 'br-lan'
+	list ports 'eth1_TODO_VERIFY'
+
+config interface 'lan'
+	option device 'br-lan'
+	option proto 'static'
+	option ipaddr '10.0.0.1'
+	option netmask '255.255.255.0'
