@@ -33,14 +33,21 @@ table inet vendo5 {
 		type ether_addr
 	}
 
+	# Walled garden: destinations an unpaid client may reach (the admin's Utility page fills this set).
+	set walled {
+		type ipv4_addr
+	}
+
 	chain dstnat {
 		type nat hook prerouting priority dstnat; policy accept;
+		iifname "br-lan" ip daddr @walled accept
 		iifname "br-lan" ether saddr != @allowed tcp dport 80 dnat ip to 10.0.0.1:3000
 	}
 
 	chain forward {
 		type filter hook forward priority filter; policy drop;
 		iifname "br-lan" oifname "eth0" ether saddr @allowed accept
+		iifname "br-lan" oifname "eth0" ip daddr @walled accept
 		# unpaid traffic to the portal's own app (port 3000) and to the
 		# router itself must still reach it — only gate LAN->WAN forwarding.
 		iifname "br-lan" oifname "br-lan" accept

@@ -62,3 +62,16 @@ test('systemInfo mirrors ubus: uptime and local time in seconds, load scaled by 
   assert.ok(Math.abs(i.localtime - Date.now() / 1000) < 5);
   assert.deepEqual(createStats({ fs: files({}) }).systemInfo().load, []);
 });
+
+test('stand-in interfaces are added only when missing, with counters that grow, so graphs move on a laptop', () => {
+  let t = 10000;
+  const run = () => '[{"ifname":"lo","stats64":{"rx":{"bytes":1},"tx":{"bytes":1}}},{"ifname":"eth1","stats64":{"rx":{"bytes":5},"tx":{"bytes":5}}}]';
+  const s = createStats({ fs: files({}), runCommand: run, standIns: ['eth0', 'eth1'], now: () => t });
+  const a = JSON.parse(s.snapshot().interfaceInfo);
+  assert.deepEqual(a.map((x) => x.ifname), ['lo', 'eth1', 'eth0']);
+  assert.equal(a.find((x) => x.ifname === 'eth1').stats64.rx.bytes, 5, 'a real interface is never replaced');
+  const first = a.find((x) => x.ifname === 'eth0').stats64.rx.bytes;
+  t += 5000;
+  assert.ok(JSON.parse(s.snapshot().interfaceInfo).find((x) => x.ifname === 'eth0').stats64.rx.bytes > first);
+  assert.equal(createStats({ fs: files({}), runCommand: run }).snapshot().interfaceInfo, run(), 'no stand-ins by default');
+});

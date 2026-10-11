@@ -10,7 +10,7 @@ const readText = (fs, file) => {
 
 // Device figures for the dashboard cards. Every reader degrades to an empty value: a missing
 // /sys file or a failing `ip` must leave a card blank, never fail the whole dashboard.
-function createStats({ fs = nodeFs, runCommand = () => '', statfs = nodeFs.statfsSync, userDir = '/mnt/wifi5' } = {}) {
+function createStats({ fs = nodeFs, runCommand = () => '', statfs = nodeFs.statfsSync, userDir = '/mnt/wifi5', standIns = [], now = Date.now } = {}) {
   let prev = null; // last /proc/stat sample, for the delta
 
   function cpuTimes() {
@@ -64,12 +64,21 @@ function createStats({ fs = nodeFs, runCommand = () => '', statfs = nodeFs.statf
   }
 
   // `ip -s -j link show` as the string the page JSON.parses itself.
+  // standIns: interface names this machine lacks but the pages expect (a development laptop has no eth0): they are
+  // added with counters that grow with time, so the traffic graphs move.
   function interfaceInfo() {
-    try {
-      return runCommand(['ip', '-s', '-j', 'link', 'show']) || '[]';
-    } catch {
-      return '[]';
+    let text = '[]';
+    try { text = runCommand(['ip', '-s', '-j', 'link', 'show']) || '[]'; } catch { /* no ip */ }
+    if (!standIns.length) return text;
+    let list = [];
+    try { list = JSON.parse(text); } catch { list = []; }
+    if (!Array.isArray(list)) list = [];
+    const t = Math.floor(now() / 1000);
+    for (const n of standIns) {
+      if (list.some((l) => l.ifname === n)) continue;
+      list.push({ ifname: n, link_type: 'ether', operstate: 'UP', stats64: { rx: { bytes: t * 1500, packets: t }, tx: { bytes: t * 700, packets: t } } });
     }
+    return JSON.stringify(list);
   }
 
   // What `ubus call system info` answers on OpenWrt, from /proc, for a host without ubus (a dev machine, CI).

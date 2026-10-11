@@ -24,6 +24,9 @@ const { createSettingsHandlers } = require('./lib/wire/settings');
 const { createSettings } = require('./lib/store/settings');
 const { createSystemHandlers } = require('./lib/wire/system');
 const { timeForPesos, profileFor } = require('./lib/money/rates');
+const { createUci } = require('./lib/system/uci');
+const { createNetworkHandlers } = require('./lib/wire/network');
+const { createNetCommands } = require('./lib/system/netcmd');
 const { createClients } = require('./lib/store/clients');
 const { createAccess } = require('./lib/store/access');
 const { createClientLog } = require('./lib/store/clientlog');
@@ -71,13 +74,16 @@ session.load();
 // shortcut: no-op shell-out for firewall/arp when VENDO5_FIREWALL_CMD=noop
 // (used by the smoke test, which has no real nft/ip environment). Real
 // deployments never set this, so production always shells out for real.
+// The one exception is read-only `ip -j ...`, which the network pages need to show a development machine's real
+// interfaces; nothing else (nft, reboot, ...) runs.
+const realRun = (args, opts = {}) => {
+  const { execFileSync } = require('node:child_process');
+  // a hung command must not freeze the event loop for long; unpacking an update is the one slow job (opts.timeout)
+  return execFileSync(args[0], args.slice(1), { encoding: 'utf8', timeout: opts.timeout || 5000, maxBuffer: 32 * 1024 * 1024 });
+};
 const runCommand = process.env.VENDO5_FIREWALL_CMD === 'noop'
-  ? () => ''
-  : (args, opts = {}) => {
-      const { execFileSync } = require('node:child_process');
-      // a hung command must not freeze the event loop for long; unpacking an update is the one slow job (opts.timeout)
-      return execFileSync(args[0], args.slice(1), { encoding: 'utf8', timeout: opts.timeout || 5000, maxBuffer: 32 * 1024 * 1024 });
-    };
+  ? (args, opts) => (args[0] === 'ip' && args[1] === '-j' ? realRun(args, opts) : '')
+  : realRun;
 
 const firewall = createFirewall(runCommand);
 // shortcut: VENDO5_ARP_FAKE_MAC fixes every client's resolved MAC, for
@@ -110,7 +116,12 @@ try {
   // Installing software replaces this very directory, so it is only allowed on the device (under its supervisor).
   const updateEnabled = process.env.VENDO5_SUPERVISED === '1';
   const routes = createAdminRoutes({ pages, sessions, serveStatic: createStatic({ root: uiDir }), system: { stateDir, version, restart, mainlog, appDir, runCommand, updateEnabled } });
-  const stats = createStats({ runCommand });
+  // OpenWrt has ubus; a development machine does not, and then the same pages run against an emulated uci.
+  const hasUbus = process.env.VENDO5_FIREWALL_CMD !== 'noop' && ['/bin/ubus', '/sbin/ubus', '/usr/bin/ubus', '/usr/sbin/ubus'].some((f) => require('node:fs').existsSync(f));
+  const stats = createStats({ runCommand, standIns: hasUbus ? [] : ['eth0', 'eth1'] });
+  const uci = createUci({ runCommand, stateFile: path.join(stateDir, 'uci-emulated.json'), hasUbus });
+  const net = createNetCommands({ runCommand, uci });
+  if (!hasUbus) log('warn', 'no ubus on this machine: the network pages use an emulated uci');
   const vouchers = createVouchers({ file: path.join(stateDir, 'vouchers', 'list.json') });
   const tickets = createTickets({ file: path.join(stateDir, 'vouchers', 'tickets.json') });
   const credits = createCredits({ file: path.join(stateDir, 'credits', 'list.json') });
@@ -130,6 +141,7 @@ try {
   } });
   const money = createMoney({ vouchers, credits, access, clientLog, ratePesosPerMinute: () => pesos_per_minute, sessions: session, firewall, sales, mainlog, save: () => session.save() });
   const events = {
+    ...createNetworkHandlers({ file: path.join(stateDir, 'network.json'), uci, runCommand, arp, mainlog, leasesFile: process.env.VENDO5_LEASES_FILE || '/tmp/dhcp.leases', crontabFile: process.env.VENDO5_CRONTAB || (hasUbus ? '/etc/crontabs/root' : path.join(stateDir, 'crontab')) }),
     ...createSystemHandlers({ appDir, runCommand, mainlog, restart, enabled: updateEnabled }),
     ...createSettingsHandlers({ settings, mainlog, deviceName, restart, version, lanInterface: config.network.lan_interface }),
     ...createDeviceHandlers({ clients, access, clientLog, sessions: session, money, firewall, mainlog, save: () => session.save() }),
@@ -141,7 +153,7 @@ try {
       firewall,
       arp,
       stats,
-      passthrough: createPassthrough({ runCommand, reboot: () => runCommand(['reboot']), systemInfo: stats.systemInfo }),
+      passthrough: createPassthrough({ runCommand, reboot: () => runCommand(['reboot']), systemInfo: stats.systemInfo, net }),
       mainlog,
       notifications: createNotifications({ file: path.join(stateDir, 'notification.json') }),
       licence,

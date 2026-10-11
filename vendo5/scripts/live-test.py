@@ -192,6 +192,21 @@ def main():
         shot(d, '4-logs')
         check('logs page raised no JavaScript error', errs(d) == [], str(errs(d)))
 
+        print('\n== NETWORK PAGES ==')
+        for page in ('interfaces', 'dhcp', 'leases', 'wireless', 'ntp-client', 'scheduler', 'utility', 'nft'):
+            d.get(f'{URL}/admin?page={page}')
+            arm(d)
+            time.sleep(2.5)
+            check(f'{page} loads and raises no JavaScript error', f'page={page}' in d.current_url and errs(d) == [], str(errs(d))[:200])
+            shot(d, f'net-{page}')
+        d.get(URL + '/admin?page=ntp-client'); arm(d)
+        check('NTP shows the servers from uci', until(lambda: d.find_element(By.ID, 'server1').get_attribute('value') == '0.openwrt.pool.ntp.org'))
+        fill(d, {'server1': 'time.example.org'})
+        d.find_element(By.ID, 'save-ntp').click()
+        time.sleep(1.5)
+        d.refresh(); arm(d)
+        check('a saved NTP server is still there after a reload', until(lambda: d.find_element(By.ID, 'server1').get_attribute('value') == 'time.example.org'))
+
         print('\n== PROFILE MENU (the 3 dots) ==')
         d.get(URL + '/admin?page=dashboard'); arm(d); time.sleep(1.5)
         items = [e.get_attribute('id') for e in d.find_elements(By.CSS_SELECTOR, '.sidebar-dropdown a.dropdown-item[id], .preview-list a.dropdown-item[id]')]
