@@ -59,11 +59,17 @@ function createSessionStore(filePath) {
     return due;
   }
 
+  function revoke(mac) {
+    if (!(mac in sessions)) return false;
+    delete sessions[mac];
+    return true;
+  }
+
   function all() {
     return { ...sessions };
   }
 
-  return { load, save, addCredit, getSession, isActive, expireDue, all };
+  return { load, save, addCredit, getSession, isActive, expireDue, revoke, all };
 }
 
 module.exports = { createSessionStore };

@@ -124,3 +124,30 @@ test('all() returns every active session keyed by mac', () => {
   const snapshot = s.all();
   assert.deepEqual(Object.keys(snapshot).sort(), ['m1', 'm2']);
 });
+
+test('revoke removes an existing session and returns true', () => {
+  const s = createSessionStore(tmpFile());
+  s.load();
+  s.addCredit('m1', 5, 1, 1000);
+  assert.equal(s.revoke('m1'), true);
+  assert.equal(s.getSession('m1'), undefined);
+});
+
+test('revoke on an unknown mac returns false and is a no-op', () => {
+  const s = createSessionStore(tmpFile());
+  s.load();
+  assert.equal(s.revoke('never-existed'), false);
+  assert.deepEqual(s.all(), {});
+});
+
+test('revoke does not call save() itself (caller\'s responsibility)', () => {
+  const file = tmpFile();
+  const s = createSessionStore(file);
+  s.load();
+  s.addCredit('m1', 5, 1, 1000);
+  s.save(); // the one save we expect on disk
+  const before = fs.readFileSync(file, 'utf8');
+  s.revoke('m1'); // no save() call after this
+  const after = fs.readFileSync(file, 'utf8');
+  assert.equal(before, after); // file unchanged -- revoke alone never touched disk
+});
