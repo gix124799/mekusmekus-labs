@@ -23,13 +23,12 @@ test('every sales event is guarded', () => {
   for (const [id, d] of Object.entries(rig().h)) assert.equal(d.guard, true, id);
 });
 
-test('Sales: per-day totals under the machine name, no sub-vendos, and clearing empties it', () => {
+test('Sales: per-day totals under the machine name, and clearing empties it', () => {
   const r = rig();
   r.sales.add({ kind: 'coin', amount: 1, mac: 'm1' });
   r.sales.add({ kind: 'voucher', amount: 5, mac: 'm1', owner: 'Juan' });
   r.day(1);
   r.sales.add({ kind: 'credit', amount: 10, mac: 'm2', owner: 'Pedro' });
-  assert.deepEqual(r.call('@nav-22125'), { vendoInfo: { sub: {} } });
   assert.deepEqual(r.call('@nav-00932'), { ETHYLNET: { '11-10-2026': 6, '12-10-2026': 10 } });
   r.call('@nav-11220', { name: 'Someone', clear: true });
   assert.equal(r.sales.all().length, 3, 'another name changes nothing');

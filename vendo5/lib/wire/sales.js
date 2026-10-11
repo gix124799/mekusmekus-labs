@@ -16,9 +16,6 @@ function createSalesHandlers({ sales, deviceName, mainlog }) {
   const guarded = (fallback, handler) => ({ guard: true, fallback, handler });
 
   return {
-    // The Sales page asks this first for the sub-vendo list; there are no sub-vendos here.
-    '@nav-22125': guarded({}, () => ({ vendoInfo: { sub: {} } })),
-
     '@nav-00932': guarded({}, () => ({ [deviceName]: perDay(sales.all(), () => true) })),
 
     // Clear and Remove both drop the machine's sales inventory (there is only one machine).

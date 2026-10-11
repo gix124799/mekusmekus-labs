@@ -22,6 +22,7 @@ function createClients({ file }) {
       for (const m of extraMacs) if (MAC.test(m)) rec(all, m.toLowerCase());
       return all;
     },
+    addPoints: (mac, pts) => edit(mac, (r) => { r.point += pts; }),
     addTotal: (mac, pesos) => edit(mac, (r) => { r.total += pesos; }),
     setName: (mac, name) => typeof name === 'string' && name.length <= 40 && edit(mac, (r) => { r.name = name; }),
     setCredit: (mac, v) => Number.isFinite(v) && v >= 0 && edit(mac, (r) => { r.credit = v; }),

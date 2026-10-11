@@ -160,3 +160,22 @@ test('a coin is written to the system log the admin reads', async () => {
     sock.close();
   } finally { s.stop(); }
 });
+
+test('a coin follows the rate table the admin set, and earns the points the rules say', async () => {
+  const s = await boot({ VENDO5_ARP_FAKE_MAC: 'aa:bb:cc:dd:ee:55' });
+  try {
+    const { sock } = await login(s.port, 'admin', 'admin');
+    const add = await ask(sock, '@nav-22126', { action: 'add-config', id: 'main', coin: 1, minute: 300, config: { type: 'pausable', upload: '2M', download: '3M', pauselimit: 2 } });
+    assert.equal(add.config.rate.length, 1);
+    assert.equal(await ask(sock, '@nav-0092734', { action: 'SET', path: 'vendo', coin: 1, point: 2.5 }), '');
+    assert.equal((await req(s.port, 'POST', '/api/pay-intent', { body: '{}', type: 'application/json' })).status, 200);
+    fs.writeFileSync(path.join(s.gpio, 'gpio17', 'value'), '1');
+    await waitFor(() => s.out(), /firewall allow/);
+    const saved = JSON.parse(fs.readFileSync(s.sessionFile, 'utf8'))['aa:bb:cc:dd:ee:55'];
+    assert.ok(Math.abs(saved.expiresAt - Date.now() - 300000) < 5000, '1 peso = 300 seconds from the table, not the flat rate');
+    assert.deepEqual([saved.type, saved.upload, saved.download, saved.pauselimit], ['pausable', '2M', '3M', 2]);
+    const info = (await ask(sock, '@nav-77833')).client.clientInfo.aabbccddee55;
+    assert.deepEqual([info.total, info.point], [1, 2.5]);
+    sock.close();
+  } finally { s.stop(); }
+});
