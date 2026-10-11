@@ -100,12 +100,12 @@ const LEAVING_SHIM = `<script>(function () {
 })();</script>`;
 const SHIM_AFTER = '<script type="text/javascript" src="/socket.io.js?version={2}"></script>';
 
-function createPages({ root, version, hostname, enabled = DEFAULT_ENABLED, hiddenProfileItems = HIDDEN_PROFILE_ITEMS }) {
+function createPages({ root, version, hostname, enabled = DEFAULT_ENABLED, hiddenProfileItems = HIDDEN_PROFILE_ITEMS, headScript = '' }) {
   const on = new Set(enabled);
   const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
   const raw = read('nav/index.html');
   if (!raw.includes(SHIM_AFTER)) throw new Error('nav/index.html: the socket.io.js script tag the leaving-shim follows was not found');
-  const shell = trimProfile(trimNavbar(trimMenu(raw.replace(SHIM_AFTER, SHIM_AFTER + LEAVING_SHIM), on), on), hiddenProfileItems);
+  const shell = trimProfile(trimNavbar(trimMenu(raw.replace(SHIM_AFTER, SHIM_AFTER + LEAVING_SHIM + headScript), on), on), hiddenProfileItems);
   const login = stripLoginNames(read('main/index.html'));
   const ticket = read('nav/ticket.html');
   const host = escapeHtml(String(hostname).toUpperCase());

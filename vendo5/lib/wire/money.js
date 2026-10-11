@@ -3,7 +3,7 @@ const SPEED = /^\d+(K|M|G|T)$/;
 
 // Handlers for the Vouchers page and its ticket templates (@nav-*). Same conventions as nav.js: every one is
 // guarded, takes (payload, ctx) and answers the shape the original page reads.
-function createMoneyHandlers({ vouchers, tickets, sessions, mainlog, now = Date.now, save = () => {} }) {
+function createMoneyHandlers({ vouchers, tickets, sessions, mainlog, endSession, now = Date.now, save = () => {} }) {
   const log = (t) => mainlog.write('voucher', t);
   const guarded = (fallback, handler) => ({ guard: true, fallback, handler });
   const byCode = (code) => Object.values(sessions.all()).find((s) => s.code === code);
@@ -30,6 +30,12 @@ function createMoneyHandlers({ vouchers, tickets, sessions, mainlog, now = Date.
   return {
     '@nav-55647': guarded({}, () => vouchers.list()),
     '@nav-12215': guarded([], () => activeVouchers()),
+    '@nav-536547': guarded('', () => vouchers.usedText()),
+    '@nav-536548': guarded('Error', () => {
+      vouchers.clearUsed();
+      log('Admin cleared the used voucher list');
+      return 'Success';
+    }),
 
     '@nav-96547': guarded({ message: 'Error' }, (payload) => {
       const r = vouchers.generate(payload);
@@ -40,8 +46,15 @@ function createMoneyHandlers({ vouchers, tickets, sessions, mainlog, now = Date.
     // "Remove": the page sends the selected vouchers keyed by code (or a list of codes).
     '@nav-52212': guarded({}, (payload) => {
       const codes = Array.isArray(payload) ? payload : Object.keys(asObj(payload));
-      const n = vouchers.remove(codes.map(String));
+      let n = vouchers.remove(codes.map(String));
       if (n) log(`Admin removed ${n} unused voucher(s)`);
+      // the same dialog removes vouchers that are running: that ends the session they gave
+      let ended = 0;
+      for (const c of codes.map(String)) {
+        const s = byCode(c);
+        if (s) { endSession(s.mac); ended++; }
+      }
+      if (ended) { save(); log(`Admin removed ${ended} running voucher session(s)`); }
       return {};
     }),
 

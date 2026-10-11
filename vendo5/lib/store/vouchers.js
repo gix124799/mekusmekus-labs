@@ -1,4 +1,6 @@
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const { jsonFile } = require('./jsonfile');
 
 // No 0/1/I/L/O: a code read off a printed ticket must not be ambiguous. 31 symbols.
@@ -15,7 +17,9 @@ function randomCode(length, randomInt) {
 
 // Unused voucher codes: { <code>: { code, duration (s), upload, download, type, notsametype, genfrom,
 // price, pauselimit?, max_data_limit?, validity? (hours), created (ms) } }.
-function createVouchers({ file, now = Date.now, randomInt = (n) => crypto.randomInt(n) }) {
+const MAX_USED = 5000;
+
+function createVouchers({ file, usedFile = file.replace(/\.json$/, '') + '.used', now = Date.now, randomInt = (n) => crypto.randomInt(n) }) {
   const store = jsonFile(file, {});
   const toInt = (v) => (v === undefined || v === null || v === '' ? NaN : Number(v));
 
@@ -67,8 +71,27 @@ function createVouchers({ file, now = Date.now, randomInt = (n) => crypto.random
     return { message: 'Done', newvoucher: made, now: now() };
   }
 
+  // Used vouchers, one JSON object per line (what the page's Used Voucher table parses); capped, oldest first out.
+  function usedLines() {
+    try {
+      return fs.readFileSync(usedFile, 'utf8').split('\n').filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
   return {
     generate,
+    markUsed(v, mac) {
+      const lines = usedLines();
+      lines.push(JSON.stringify({ ...v, mac, soldDate: now() }));
+      fs.mkdirSync(path.dirname(usedFile), { recursive: true });
+      fs.writeFileSync(usedFile, lines.slice(-MAX_USED).join('\n') + '\n');
+    },
+    usedText: () => usedLines().join('\n'),
+    clearUsed() {
+      fs.rmSync(usedFile, { force: true });
+    },
     list: () => store.read(),
     get: (code) => {
       const all = store.read();

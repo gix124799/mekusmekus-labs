@@ -52,6 +52,7 @@ function createMoney({ vouchers, sessions, firewall, sales, mainlog, save = () =
       sessions.restore(mac, before);
       return { ok: false, message: 'Could not use the voucher, try again' };
     }
+    try { vouchers.markUsed(v, mac); } catch (e) { log(`Used-voucher record failed: ${e.message}`); }
     try { sales.add({ kind: 'voucher', amount: v.price, mac, code: v.code, owner: v.genfrom }); } catch (e) { log(`Sales record failed: ${e.message}`); }
     save();
     log(`Voucher ${v.code} used by ${mac}: ${v.duration}s`);
@@ -91,7 +92,20 @@ function createMoney({ vouchers, sessions, firewall, sales, mainlog, save = () =
     return { ok: true, message: 'Resumed' };
   }
 
-  return { redeemVoucher, pause, resume };
+  // End a client's session for good (admin Remove): the firewall may never have known the MAC.
+  function endSession(mac) {
+    if (typeof mac !== 'string' || !mac) return false;
+    try {
+      firewall.revoke(mac);
+    } catch {
+      /* not in the allowed set (paused, or never allowed): nothing to take away */
+    }
+    const had = sessions.revoke(mac);
+    if (had) save();
+    return had;
+  }
+
+  return { redeemVoucher, pause, resume, endSession };
 }
 
 module.exports = { createMoney, LOCK_AFTER, LOCK_MS };

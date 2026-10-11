@@ -140,3 +140,13 @@ test('factory reset ends all sessions, restores the default login, clears notice
   assert.equal(t.state.cleared, 1);
   assert.ok(t.lines.some((l) => /reset the device/.test(l)));
 });
+
+test('remove accepts the code a running voucher carries, as one string or in a list', () => {
+  const t = setup();
+  t.sessions.addTime('m1', 60000, { code: 'AAA111' }, 50000);
+  t.sessions.addTime('m2', 60000, { code: 'BBB222' }, 50000);
+  assert.equal(call(t.nav, '@nav-67345', { info: 'AAA111' }), 'Success');
+  assert.equal(t.sessions.getSession('m1'), undefined);
+  assert.equal(call(t.nav, '@nav-44232', { code: 'x', mac: 'BBB222' }), 'Success');
+  assert.equal(t.sessions.getSession('m2'), undefined);
+});

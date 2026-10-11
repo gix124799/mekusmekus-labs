@@ -8,7 +8,7 @@ Needs: selenium (python), firefox, geckodriver (GECKODRIVER=/path, default /snap
 port 3996. Run from anywhere:   python3 scripts/live-test.py
 Screenshots and the server log land in a temp dir that is printed at the end. Exit code 1 if any check fails.
 """
-import json, os, re, subprocess, sys, tempfile, time, urllib.request
+import json, os, re, subprocess, sys, tempfile, time, urllib.request, urllib.error
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.options import Options
@@ -55,6 +55,20 @@ def errs(d):
 
 def shot(d, name):
     d.save_screenshot(f'{OUT}/{name}.png')
+
+
+def api(method, path, body=None):
+    req = urllib.request.Request(URL + path, data=json.dumps(body).encode() if body is not None else None, method=method, headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        return {'http': e.code}
+
+
+def fill(d, values):
+    for k, v in values.items():
+        d.execute_script("var e=document.getElementById(arguments[0]);e.value=arguments[1];e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}))", k, str(v))
 
 
 def foreign_requests(d):
@@ -129,6 +143,45 @@ def main():
         check('the session is gone from the file', until(lambda: M1 not in saved() and M2 in saved()), str(list(saved())))
         check('the row disappears from the page', until(lambda: M1 not in body()))
         time.sleep(2)  # the page is still redrawing after the action; a navigation now can be overtaken by it
+
+        print('\n== VOUCHERS ==')
+        d.find_element(By.CSS_SELECTOR, 'a.nav-link[href="?page=vouchers"]').click()
+        check('vouchers page loads', until(lambda: 'page=vouchers' in d.current_url))
+        arm(d)
+        time.sleep(1.5)
+        gen = until(lambda: next((b for b in d.find_elements(By.TAG_NAME, 'button') if b.text.strip() == 'Generate' and b.is_displayed()), None))
+        gen.click()
+        until(lambda: d.find_element(By.ID, 'owner-input').is_displayed())
+        fill(d, {'owner-input': 'Juan', 'price-input': 5, 'voucher-qty': 2, 'voucher-prefix': 'T', 'voucher-type': 1, 'voucher-pauselimit': 2})
+        shot(d, '6-generate')
+        d.find_element(By.ID, 'generate-voucher').click()
+        check('generating shows the new codes', until(lambda: 'voucher generated' in body() and len(re.findall(r't[a-z0-9]{6}', body())) >= 2), body()[-200:])
+        listed = lambda: json.load(open(f'{work}/state/vouchers/list.json'))
+        codes = [c for c in listed() if c.startswith('T')]
+        check('two T-prefixed vouchers are stored', len(codes) == 2, str(codes))
+        shot(d, '7-generated')
+        code = codes[0]
+        r = api('POST', '/api/redeem', {'code': 'NOPE1234'})
+        check('a wrong voucher is refused', r.get('ok') is False and 'Invalid' in r.get('message', ''), str(r))
+        r = api('POST', '/api/redeem', {'code': code.lower()})
+        check('the portal accepts a real voucher', r.get('ok') is True, str(r))
+        st = api('GET', '/api/status')
+        check('the client is online with a pausable session', st.get('active') and st.get('pausable') and st.get('remainingSeconds', 0) > 3500, str(st))
+        check('the used voucher is gone from the unused list', code not in listed())
+        check('the sale was recorded', any(x.get('code') == code and x.get('amount') == 5 for x in json.load(open(f'{work}/state/sales.json'))))
+        check('pause freezes the session', api('POST', '/api/pause').get('ok') is True and api('GET', '/api/status').get('paused') is True)
+        time.sleep(1.2)
+        a, b = api('GET', '/api/status')['remainingSeconds'], None
+        time.sleep(1.2)
+        b = api('GET', '/api/status')['remainingSeconds']
+        check('paused time does not run down', a == b, f'{a} {b}')
+        check('resume continues it', api('POST', '/api/resume').get('ok') is True and api('GET', '/api/status').get('active') is True)
+        d.refresh()
+        arm(d)
+        check('the Active Voucher table lists it with its client MAC', until(lambda: code.lower() in body() and 'aa:bb:cc:dd:ee:99' in body()), body()[:200])
+        check('the Used Voucher table lists it', until(lambda: body().count(code.lower()) >= 2))
+        shot(d, '8-vouchers')
+        check('the vouchers page raised no JavaScript error', errs(d) == [], str(errs(d)))
 
         print('\n== LOGS ==')
         d.find_element(By.CSS_SELECTOR, 'a.nav-link[href="?page=logs"]').click()  # through the menu, as a person would

@@ -33,6 +33,16 @@ function createNavHandlers({ sessions, firewall, arp, stats, passthrough, mainlo
     return { data, session, sessionList: {} };
   }
 
+  // A row names its client by MAC, or (Vouchers page) by the code it is running.
+  function resolveMac(x) {
+    const m = macOf(x);
+    if (typeof m === 'string' && !sessions.getSession(m)) {
+      const s = Object.values(sessions.all()).find((v) => v.code === m);
+      if (s) return s.mac;
+    }
+    return m;
+  }
+
   // Removing a session: the firewall may never have heard of it (revoke then throws); the session goes either way.
   function remove(mac) {
     if (typeof mac !== 'string' || !mac) return false;
@@ -73,16 +83,17 @@ function createNavHandlers({ sessions, firewall, arp, stats, passthrough, mainlo
     // vendo5 sessions cannot be paused, so there is nothing to disconnect without ending them.
     '@nav-22313': guarded('Error', () => 'Error'),
     '@nav-44232': guarded('Error', (payload) => {
-      const mac = macOf(payload);
+      const mac = resolveMac(payload);
       if (!remove(mac)) return 'Error';
       log(`Admin removed session ${mac}`);
       return 'Success';
     }),
     '@nav-67345': guarded('Error', (payload) => {
-      const list = Array.isArray(payload) ? payload : asObj(payload).info;
+      const info = Array.isArray(payload) ? payload : asObj(payload).info;
+      const list = typeof info === 'string' ? [info] : info; // the Vouchers page removes one running voucher by its code
       if (!Array.isArray(list) || !list.length) return 'Error';
       let n = 0;
-      for (const item of list) if (remove(macOf(item))) n++;
+      for (const item of list) if (remove(resolveMac(item))) n++;
       if (n) log(`Admin removed ${n} session(s)`);
       return n ? 'Success' : 'Error';
     }),

@@ -92,3 +92,23 @@ test('ticket templates: save, list, read, delete', () => {
   assert.equal(r.call('@nav-23466', name), 'Success');
   assert.equal(r.call('@nav-23466', name), 'Error');
 });
+
+test('removing a running voucher through the unused-voucher dialog ends its session; the used list reads and clears', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v5wm2-'));
+  const sessions = createSessionStore(path.join(dir, 's.json'));
+  sessions.load();
+  const vouchers = createVouchers({ file: path.join(dir, 'v.json') });
+  const ended = [];
+  const h = createMoneyHandlers({ vouchers, tickets: createTickets({ file: path.join(dir, 't.json') }), sessions, mainlog: { write() {} }, endSession: (m) => { ended.push(m); sessions.revoke(m); } });
+  sessions.addTime('m1', 60000, { code: 'RUN111' }, Date.now());
+  h['@nav-52212'].handler({ RUN111: true }, {});
+  assert.deepEqual(ended, ['m1']);
+  const v = vouchers.generate({ type: '0', qty: 1, length: 6, random: true, prefix: '', upload: '1M', download: '1M', duration: 60, owner: 'Juan', price: 1 }).newvoucher[0];
+  vouchers.markUsed(v, 'm9');
+  const lines = h['@nav-536547'].handler(undefined, {}).split('\n');
+  assert.equal(lines.length, 1);
+  const row = JSON.parse(lines[0]);
+  assert.deepEqual([row.code, row.mac, typeof row.soldDate], [v.code, 'm9', 'number']);
+  assert.equal(h['@nav-536548'].handler(undefined, {}), 'Success');
+  assert.equal(h['@nav-536547'].handler(undefined, {}), '');
+});

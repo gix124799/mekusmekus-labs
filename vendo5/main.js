@@ -87,7 +87,9 @@ try {
   const licence = createLicence({ stateDir });
   const mainlog = createMainLog({ dir: path.join(stateDir, 'mainlogs') });
   const sessions = createSessions({});
-  const pages = createPages({ root: uiDir, version, hostname: process.env.VENDO5_DEVICE_NAME || 'ETHYLNET' });
+  const pages = createPages({ root: uiDir, version, hostname: process.env.VENDO5_DEVICE_NAME || 'ETHYLNET',
+    // development only: scripts/probe.py injects a recorder that logs every reply property the page reads
+    headScript: process.env.VENDO5_PROBE_JS ? `<script>${require('node:fs').readFileSync(process.env.VENDO5_PROBE_JS, 'utf8')}</script>` : '' });
   const routes = createAdminRoutes({ pages, sessions, serveStatic: createStatic({ root: uiDir }) });
   const stats = createStats({ runCommand });
   const vouchers = createVouchers({ file: path.join(stateDir, 'vouchers', 'list.json') });
@@ -95,7 +97,7 @@ try {
   const sales = createSales({ file: path.join(stateDir, 'sales.json') });
   const money = createMoney({ vouchers, sessions: session, firewall, sales, mainlog, save: () => session.save() });
   const events = {
-    ...createMoneyHandlers({ vouchers, tickets, sessions: session, mainlog, save: () => session.save() }),
+    ...createMoneyHandlers({ vouchers, tickets, sessions: session, mainlog, endSession: money.endSession, save: () => session.save() }),
     ...createMainHandlers({ account, sessions, licence, mainlog, version }),
     ...createNavHandlers({
       sessions: session,
