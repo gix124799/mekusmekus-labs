@@ -266,3 +266,96 @@ test('GET /admin/api/logs requires a valid admin session and returns getRecent()
     server.close();
   }
 });
+
+function fakeFirewall({ revokeThrows = false, allowThrows = false } = {}) {
+  const calls = [];
+  return {
+    calls,
+    revoke: (mac) => { calls.push(['revoke', mac]); if (revokeThrows) throw new Error('nft: revoke failed'); },
+    allow: (mac) => { calls.push(['allow', mac]); if (allowThrows) throw new Error('nft: allow failed'); },
+  };
+}
+
+test('POST revoke on an unknown mac returns 404 and makes no firewall call', async () => {
+  const adminAuth = fakeAdminAuth('tok123');
+  const firewall = fakeFirewall();
+  const sessionStore = { ...fakeSession(false), all: () => ({}), revoke: () => { throw new Error('must not be called'); } };
+  const { server } = createServer({ session: sessionStore, firewall, arp: fakeArp('m1'), ratePesosPerMinute: 1, adminAuth });
+  const port = await listen(server);
+  try {
+    const res = await request(port, 'POST', '/admin/api/sessions/unknown-mac/revoke', { headers: { Cookie: 'vendo5_admin=tok123' } });
+    assert.equal(res.status, 404);
+    assert.deepEqual(firewall.calls, []);
+  } finally {
+    server.close();
+  }
+});
+
+test('POST revoke, success path: firewall.revoke before session.revoke, in that order', async () => {
+  const adminAuth = fakeAdminAuth('tok123');
+  const firewall = fakeFirewall();
+  const order = [];
+  const sessionStore = {
+    ...fakeSession(false),
+    all: () => ({ m1: { mac: 'm1', creditPesos: 5, expiresAt: Date.now() + 60000 } }),
+    revoke: (mac) => { order.push(['session.revoke', mac]); return true; },
+    save: () => { order.push(['session.save']); },
+  };
+  const { server } = createServer({ session: sessionStore, firewall, arp: fakeArp('m1'), ratePesosPerMinute: 1, adminAuth });
+  const port = await listen(server);
+  try {
+    const res = await request(port, 'POST', '/admin/api/sessions/m1/revoke', { headers: { Cookie: 'vendo5_admin=tok123' } });
+    assert.equal(res.status, 200);
+    assert.deepEqual(JSON.parse(res.body), { ok: true });
+    assert.deepEqual(firewall.calls, [['revoke', 'm1']]);
+    assert.deepEqual(order, [['session.revoke', 'm1'], ['session.save']]);
+  } finally {
+    server.close();
+  }
+});
+
+test('POST revoke, firewall.revoke throws: session state is left completely untouched', async () => {
+  const adminAuth = fakeAdminAuth('tok123');
+  const firewall = fakeFirewall({ revokeThrows: true });
+  const sessionStore = {
+    ...fakeSession(false),
+    all: () => ({ m1: { mac: 'm1', creditPesos: 5, expiresAt: Date.now() + 60000 } }),
+    revoke: () => { throw new Error('must not be called when firewall.revoke throws'); },
+    save: () => { throw new Error('must not be called when firewall.revoke throws'); },
+  };
+  const { server } = createServer({ session: sessionStore, firewall, arp: fakeArp('m1'), ratePesosPerMinute: 1, adminAuth });
+  const port = await listen(server);
+  try {
+    const res = await request(port, 'POST', '/admin/api/sessions/m1/revoke', { headers: { Cookie: 'vendo5_admin=tok123' } });
+    assert.equal(res.status, 500);
+    assert.deepEqual(JSON.parse(res.body), { ok: false });
+  } finally {
+    server.close();
+  }
+});
+
+test('POST revoke requires a valid admin session', async () => {
+  const adminAuth = fakeAdminAuth('tok123');
+  const sessionStore = { ...fakeSession(false), all: () => ({ m1: { mac: 'm1', creditPesos: 5, expiresAt: Date.now() + 60000 } }) };
+  const { server } = createServer({ session: sessionStore, firewall: fakeFirewall(), arp: fakeArp('m1'), ratePesosPerMinute: 1, adminAuth });
+  const port = await listen(server);
+  try {
+    const res = await request(port, 'POST', '/admin/api/sessions/m1/revoke');
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});
+
+test('dashboard HTML includes a Revoke control per session row', async () => {
+  const adminAuth = fakeAdminAuth('tok123');
+  const sessionStore = { ...fakeSession(true), all: () => ({ m1: { mac: 'm1', creditPesos: 5, expiresAt: Date.now() + 60000 } }) };
+  const { server } = createServer({ session: sessionStore, firewall: fakeFirewall(), arp: fakeArp('m1'), ratePesosPerMinute: 1, adminAuth });
+  const port = await listen(server);
+  try {
+    const res = await request(port, 'GET', '/admin', { headers: { Cookie: 'vendo5_admin=tok123' } });
+    assert.match(res.body, /data-revoke-mac="m1"/);
+  } finally {
+    server.close();
+  }
+});

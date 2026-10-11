@@ -1,7 +1,7 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const { getRecent } = require('./logger');
+const { getRecent, log } = require('./logger');
 
 const PAY_INTENT_TTL_MS = 10000;
 const THEME_DIR = path.join(__dirname, '..', 'public', 'theme');
@@ -89,12 +89,13 @@ function dashboardContent(sessionsByMac, now = Date.now()) {
   const total = list.reduce((n, s) => n + s.creditPesos, 0);
   const rows = list.map((s) => {
     const remaining = Math.max(0, Math.round((s.expiresAt - now) / 1000));
-    return `<tr><td>${escapeHtml(s.mac)}</td><td>${s.creditPesos}</td><td>${remaining}s</td></tr>`;
+    return `<tr data-mac-row="${escapeHtml(s.mac)}"><td>${escapeHtml(s.mac)}</td><td>${s.creditPesos}</td><td>${remaining}s</td>` +
+      `<td><button data-revoke-mac="${escapeHtml(s.mac)}" class="ghost">Revoke</button></td></tr>`;
   }).join('');
   return `<div class="card">
 <h2>Active Sessions: ${list.length} &middot; Credit: &#8369;${total}</h2>
-<table><thead><tr><th>MAC</th><th>Credit (&#8369;)</th><th>Remaining</th></tr></thead>
-<tbody id="sessions-tbody">${rows || '<tr><td colspan="3">No active sessions</td></tr>'}</tbody></table>
+<table><thead><tr><th>MAC</th><th>Credit (&#8369;)</th><th>Remaining</th><th></th></tr></thead>
+<tbody id="sessions-tbody">${rows || '<tr><td colspan="4">No active sessions</td></tr>'}</tbody></table>
 </div>
 <div class="top"><span></span><button id="logout-btn" class="ghost">Logout</button></div>`;
 }
@@ -228,6 +229,27 @@ function createServer({ session, firewall, arp, ratePesosPerMinute, adminAuth })
       if (!isAdminSession()) { res.writeHead(401).end(); return; }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(getRecent()));
+      return;
+    }
+
+    const revokeMatch = req.url.match(/^\/admin\/api\/sessions\/([^/]+)\/revoke$/);
+    if (req.method === 'POST' && revokeMatch) {
+      if (!isAdminSession()) { res.writeHead(401).end(); return; }
+      const targetMac = decodeURIComponent(revokeMatch[1]);
+      if (!(targetMac in session.all())) { res.writeHead(404).end(); return; }
+      try {
+        firewall.revoke(targetMac);
+      } catch (e) {
+        log('error', 'admin revoke failed', { action: 'revoke', mac: targetMac, admin: true, error: e.message });
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false }));
+        return;
+      }
+      session.revoke(targetMac);
+      session.save();
+      log('info', 'admin revoke', { action: 'revoke', mac: targetMac, admin: true });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
       return;
     }
 
