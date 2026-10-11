@@ -42,7 +42,7 @@ const ask = (c, id, p) => new Promise((res) => { const t = setTimeout(() => res(
   const problems = new Map();
   const note = (id, why) => problems.set(id, [...(problems.get(id) || []), why]);
   let mark = out.length;
-  for (const id of ids) {
+  for (const id of (process.env.FUZZ === 'portal' ? [] : ids)) {
     for (const pl of payloads) {
       if (dead) { note(id, 'SERVER DIED'); break; }
       const r = await ask(sock, id, pl);
@@ -53,7 +53,23 @@ const ask = (c, id, p) => new Promise((res) => { const t = setTimeout(() => res(
     }
     if (dead) break;
   }
-  console.log(`events tried: ${ids.length}, server alive: ${!dead}`);
+  // the customer portal's events (anonymous socket, one device)
+  const ps = connect('http://127.0.0.1:' + port, { reconnection: false });
+  await new Promise((r) => ps.on('connect', r));
+  const portalIds = Array.from({ length: 46 }, (_, i) => `@portal-${i}`);
+  for (const id of portalIds) {
+    for (const pl of payloads) {
+      if (dead) { note(id, 'SERVER DIED'); break; }
+      await new Promise((r) => setTimeout(r, 300)); // under the per-socket flood limit
+      const r = await ask(ps, id, pl);
+      const fresh = out.slice(mark); mark = out.length;
+      const errs = fresh.split('\n').filter((l) => /"level":"error"/.test(l));
+      if (errs.length) note(id, `payload ${JSON.stringify(pl)?.slice(0, 60)} -> ${errs[0].slice(0, 200)}`);
+    }
+  }
+  ps.close();
+  if (dead) console.log('--- server output at death ---\n' + out.slice(-1800));
+  console.log(`events tried: ${ids.length} admin + ${portalIds.length} portal, server alive: ${!dead}`);
   for (const [id, list] of problems) console.log(id, '\n   ' + [...new Set(list)].slice(0, 3).join('\n   '));
   sock.close(); p.kill('SIGKILL');
   process.exit(0);
