@@ -124,7 +124,7 @@ def main():
 
         print('\n== DASHBOARD ==')
         arm(d)
-        check('the menu carries every page of the original (31 of them)', until(lambda: len(set(a.get_attribute('href').split('page=')[1] for a in d.find_elements(By.CSS_SELECTOR, 'a.nav-link[href*="page="]'))) == 31), str(len(d.find_elements(By.CSS_SELECTOR, 'a.nav-link[href*="page="]'))))
+        check('the menu carries every page of the original (32 of them)', until(lambda: len(set(a.get_attribute('href').split('page=')[1] for a in d.find_elements(By.CSS_SELECTOR, 'a.nav-link[href*="page="]'))) == 32), str(len(d.find_elements(By.CSS_SELECTOR, 'a.nav-link[href*="page="]'))))
         body = lambda: d.execute_script('return document.body.textContent').lower()  # textContent: rows scroll inside a clipped box
         check('the first seeded session is listed', until(lambda: M1 in body()), body()[:300])
         check('the second seeded session is listed', until(lambda: M2 in body()))
@@ -191,6 +191,16 @@ def main():
         check('the login is in the System Logs table', until(lambda: 'admin success login' in body()), body()[-300:])
         shot(d, '4-logs')
         check('logs page raised no JavaScript error', errs(d) == [], str(errs(d)))
+
+        print('\n== PROFILE MENU (the 3 dots) ==')
+        d.get(URL + '/admin?page=dashboard'); arm(d); time.sleep(1.5)
+        items = [e.get_attribute('id') for e in d.find_elements(By.CSS_SELECTOR, '.sidebar-dropdown a.dropdown-item[id], .preview-list a.dropdown-item[id]')]
+        for want in ('system-update', 'software-updown', 'export-data', 'import-data', 'clear-all-data', 'license', 'change-pass', 'system-reboot', 'logout'):
+            check(f'profile menu has {want}', want in items, str(items))
+        d.execute_script("document.getElementById('license').click()")
+        check('the License dialog shows the permanent offline licence', until(lambda: 'activated' in body() or 'unlimited' in body() or 'license info' in body()), body()[-200:])
+        shot(d, '9-license')
+        d.refresh(); arm(d); time.sleep(1)
 
         print('\n== NOTIFICATIONS ==')
         d.get(URL + '/admin?page=dashboard')

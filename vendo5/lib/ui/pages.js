@@ -9,7 +9,7 @@ const DEFAULT_ENABLED = ['dashboard', 'eload-profile', 'eload-product', 'eload-s
 
 // Profile-menu items that need features this product does not have (remote update from a URL,
 // software up/download, data export/import). Hidden until a later sub-project builds them.
-const HIDDEN_PROFILE_ITEMS = ['system-update', 'software-updown', 'export-data', 'import-data'];
+const HIDDEN_PROFILE_ITEMS = []; // every item of the 3-dots menu is shown; Export/Import are a local backup, the updates come from a link or a file you give
 
 const PAGE_LINK = /href="\?page=([\w-]+)"/g;
 const SUBMENU = /[ \t]*<ul class="nav flex-column sub-menu">[\s\S]*?<\/ul>[ \t]*\r?\n?/g;

@@ -22,6 +22,7 @@ const { createSalesHandlers } = require('./lib/wire/sales');
 const { createDeviceHandlers } = require('./lib/wire/devices');
 const { createSettingsHandlers } = require('./lib/wire/settings');
 const { createSettings } = require('./lib/store/settings');
+const { createSystemHandlers } = require('./lib/wire/system');
 const { timeForPesos, profileFor } = require('./lib/money/rates');
 const { createClients } = require('./lib/store/clients');
 const { createAccess } = require('./lib/store/access');
@@ -72,9 +73,10 @@ session.load();
 // deployments never set this, so production always shells out for real.
 const runCommand = process.env.VENDO5_FIREWALL_CMD === 'noop'
   ? () => ''
-  : (args) => {
+  : (args, opts = {}) => {
       const { execFileSync } = require('node:child_process');
-      return execFileSync(args[0], args.slice(1), { encoding: 'utf8', timeout: 5000 }); // a hung command must not freeze the event loop for long
+      // a hung command must not freeze the event loop for long; unpacking an update is the one slow job (opts.timeout)
+      return execFileSync(args[0], args.slice(1), { encoding: 'utf8', timeout: opts.timeout || 5000, maxBuffer: 32 * 1024 * 1024 });
     };
 
 const firewall = createFirewall(runCommand);
@@ -104,7 +106,10 @@ try {
   const pages = createPages({ root: uiDir, version, hostname: deviceName,
     // development only: scripts/probe.py injects a recorder that logs every reply property the page reads
     headScript: process.env.VENDO5_PROBE_JS ? `<script>${require('node:fs').readFileSync(process.env.VENDO5_PROBE_JS, 'utf8')}</script>` : '' });
-  const routes = createAdminRoutes({ pages, sessions, serveStatic: createStatic({ root: uiDir }) });
+  const appDir = __dirname;
+  // Installing software replaces this very directory, so it is only allowed on the device (under its supervisor).
+  const updateEnabled = process.env.VENDO5_SUPERVISED === '1';
+  const routes = createAdminRoutes({ pages, sessions, serveStatic: createStatic({ root: uiDir }), system: { stateDir, version, restart, mainlog, appDir, runCommand, updateEnabled } });
   const stats = createStats({ runCommand });
   const vouchers = createVouchers({ file: path.join(stateDir, 'vouchers', 'list.json') });
   const tickets = createTickets({ file: path.join(stateDir, 'vouchers', 'tickets.json') });
@@ -125,6 +130,7 @@ try {
   } });
   const money = createMoney({ vouchers, credits, access, clientLog, ratePesosPerMinute: () => pesos_per_minute, sessions: session, firewall, sales, mainlog, save: () => session.save() });
   const events = {
+    ...createSystemHandlers({ appDir, runCommand, mainlog, restart, enabled: updateEnabled }),
     ...createSettingsHandlers({ settings, mainlog, deviceName, restart, version, lanInterface: config.network.lan_interface }),
     ...createDeviceHandlers({ clients, access, clientLog, sessions: session, money, firewall, mainlog, save: () => session.save() }),
     ...createSalesHandlers({ sales, deviceName, mainlog }),
