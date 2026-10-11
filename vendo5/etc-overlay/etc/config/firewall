@@ -31,4 +31,5 @@ config zone
 config include 'vendo5'
 	option type 'nftables'
 	option path '/etc/vendo5-firewall.nft'
-	option reload '1'
+	# a table of its own: fw4 would otherwise paste the file INSIDE its own table, which is a syntax error that stops the whole firewall
+	option position 'ruleset-append'

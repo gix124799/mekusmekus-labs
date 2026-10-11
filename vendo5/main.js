@@ -100,7 +100,7 @@ session.load();
 const realRun = (args, opts = {}) => {
   const { execFileSync } = require('node:child_process');
   // a hung command must not freeze the event loop for long; unpacking an update is the one slow job (opts.timeout)
-  return execFileSync(args[0], args.slice(1), { encoding: 'utf8', timeout: opts.timeout || 5000, maxBuffer: 32 * 1024 * 1024 });
+  return execFileSync(args[0], args.slice(1), { encoding: 'utf8', timeout: opts.timeout || 5000, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }); // a failing command's stderr goes into the error, not the system log
 };
 const runCommand = process.env.VENDO5_FIREWALL_CMD === 'noop'
   ? (args, opts) => (args[0] === 'ip' && args[1] === '-j' ? realRun(args, opts) : '')

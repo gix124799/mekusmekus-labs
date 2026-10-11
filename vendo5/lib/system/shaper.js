@@ -10,6 +10,7 @@ const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
 // is handed to onCap (which ends its session). Speed limits are policing (excess packets dropped), not queueing.
 function createShaper({ runCommand, sessions, arp, file, onCap = () => {}, save = () => {}, log = () => {}, lan = 'br-lan', wan = 'eth0', write = (f, t) => fs.writeFileSync(f, t), now = Date.now }) {
   let signature = null;
+  let lastError = '';
   let seen = {}; // counter bytes already added, by rule comment (counters restart at zero when the chain is rewritten)
 
   // sessions that are allowed through the firewall right now
@@ -67,7 +68,8 @@ function createShaper({ runCommand, sessions, arp, file, onCap = () => {}, save 
       try { onCap(mac); } catch (e) { log('error', 'data cap enforcement failed', { mac, error: e.message }); }
     }
     const neighbours = arp.neighbors();
-    const lines = ['flush chain inet vendo5 bwlimit'];
+    // `add chain` is harmless when it exists, and brings the chain back after the firewall was reloaded without it
+    const lines = ['add chain inet vendo5 bwlimit { type filter hook forward priority filter - 1; policy accept; }', 'flush chain inet vendo5 bwlimit'];
     for (const [mac, s] of active()) {
       const ip = neighbours[mac] && IPV4.test(neighbours[mac].ip) ? neighbours[mac].ip : null;
       lines.push(...rulesFor(mac, s, ip));
@@ -78,10 +80,12 @@ function createShaper({ runCommand, sessions, arp, file, onCap = () => {}, save 
       write(file, text);
       runCommand(['nft', '-f', file]);
       signature = text;
+      lastError = '';
       seen = {};
     } catch (e) {
       signature = null;
-      log('error', 'could not apply the bandwidth limits', { error: e.message });
+      if (e.message !== lastError) log('error', 'could not apply the bandwidth limits', { error: e.message }); // once, not every tick
+      lastError = e.message;
       return false;
     }
     return true;

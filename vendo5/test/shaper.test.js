@@ -40,7 +40,7 @@ test('the chain is rewritten as one nft transaction with a speed rule per direct
   const r = rig({ [A]: { expiresAt: NOW + 5000, upload: '1M', download: '2M' } });
   assert.equal(r.sh.tick(), true);
   const t = r.files[0];
-  assert.match(t, /^flush chain inet vendo5 bwlimit\n/);
+  assert.match(t, /^add chain inet vendo5 bwlimit \{[^}]*\}\nflush chain inet vendo5 bwlimit\n/);
   assert.match(t, new RegExp(`ether saddr ${A} limit rate over 125000 bytes/second burst \\d+ bytes drop`));
   assert.match(t, /ip daddr 10\.0\.0\.5 limit rate over 250000 bytes\/second/);
   assert.match(t, new RegExp(`counter comment "v5u:${A}"`));
@@ -57,7 +57,7 @@ test('paused, disconnected and expired sessions get no rules; a device without a
   assert.ok(!r.files[0].includes('ip daddr'), 'B has no known IP');
   const r2 = rig({ [A]: { expiresAt: NOW - 1 }, [B]: { expiresAt: NOW + 5000, disconnected: true } });
   r2.sh.tick();
-  assert.equal(r2.files[0], 'flush chain inet vendo5 bwlimit\n');
+  assert.match(r2.files[0], /flush chain inet vendo5 bwlimit\n$/);
 });
 
 test('usage is added once per byte (not again each tick), and a device over its data cap is ended', () => {
