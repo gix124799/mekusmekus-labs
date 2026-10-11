@@ -1,6 +1,6 @@
 # Sub-project #6: Original UI Foundation — Admin Shell & Dashboard
 
-Status: draft, pending review
+Status: draft, pending review (amended 2026-10-11 while writing the implementation plan: see "Amendments")
 Project: MekusMekus Labs — vendo5 (replacement app for WiFi5-Soft `/soft`)
 Depends on: #2 Offline Vendo & Captive Portal (session store, firewall gate, ARP),
   #3 Network & Firewall Provisioning
@@ -29,7 +29,7 @@ entries.
 | D1 | Reuse the original frontend unchanged; implement a compatible backend | "Same layout, same features, same functions"; the event contract is already decoded |
 | D2 | Cloud-only pieces are **hidden**, not stubbed: E-load (4 pages), Online Payment (3), Phone Rental (2), and the cloud payment buttons in the customer portal | Everything the operator sees must work offline; coin cash-in stays (it is local) |
 | D3 | First slice = foundation + admin shell & dashboard | Smallest end-to-end proof that the original UI runs on vendo5 |
-| D4 | The admin password is stored **in plaintext in a 0600 file**, like the original | The original login computes `md5(tokenHalf + typedPassword)` in the browser, so the server must know the password; a stored hash cannot verify it. Trade-off accepted: weaker at rest, but the password never crosses the LAN |
+| D4 | The admin password is stored **in plaintext in a 0600 file**, like the original | The original login computes `md5(tokenHalf + typedPassword)` in the browser, so the server must know the password; a stored hash cannot verify it. Trade-off accepted: weaker at rest, but the password never crosses the LAN. *(Amended: the original login page also posted the plaintext password in a form to `/admin`; that is closed by stripping the inputs' `name` attributes, see Amendments 1.)* |
 | D5 | The menu shows **only implemented pages** | A page that is not built yet must not be reachable. The same allowlist also hides the cloud pages |
 
 ## Scope
@@ -301,3 +301,34 @@ judgement calls made while writing, flagged for review:
 2. The Disconnect row action (`@nav-22313`) is visible but reports "unavailable" in this
    slice, because it needs the paused-session state from #7. The alternatives (treat it
    as Remove, or let the client be re-allowed) each lose time or defeat the action.
+
+## Amendments (found while building the plan's prototype)
+
+The plan's code was run against the real frontend in headless Firefox before the plan was
+written. That showed the following; where it conflicts with the text above, this section
+wins. The same list is at the end of the plan.
+
+1. **Plaintext form post closed.** After a successful socket login the original page submits
+   a form to `/admin` that carries the plaintext password. The login inputs lose their `name`
+   attributes at serve time, so only the page's own hash ever leaves it.
+2. **Logout** is `POST /admin` with JSON `{"logout": true}`, not a socket event.
+3. **Menu trimming also covers** the navbar chat link, the `#console` button, and four profile
+   items (system update, software up/down, export data, import data).
+4. **Password hashing is latin1** (low 8 bits per character), matching the vendor `md5.js`.
+5. **Frontend location:** not `git mv`'d to `public/ui`. Development serves
+   `legacy/wifi5-soft/frontend-decrypted/public`; the device serves `/opt/vendo5/ui`
+   (`VENDO5_UI_DIR`). Only `main` and `nav` (about 34 MB) go into the image.
+6. **A leaving-shim** is injected after `socket.io.js`: the shell reloads the page on socket
+   disconnect, and Firefox closes the socket on navigation, so Dashboard to Logs bounced back.
+   The shim makes the disconnect handler stand down once the page is leaving.
+7. **Contract fixtures** (`test/contract/*.json`) are replaced by the live test, which asserts
+   the effects. The recorder found: notification keys are epoch milliseconds with a `message`
+   field; `active.data[mac].uploadLimit/downloadLimit` are strings; session rows need `rx/tx`;
+   system info needs `uptime`.
+8. **Event set narrowed** to what an enabled page can send: no `@nav-78663/65698` (PPPoE),
+   `@nav-300214/30210` (per-user logs) or `@nav-14433211`; the passthrough allowlist is the
+   four lines the dashboard uses; `@nav-77833` answers `{client:{clientInfo:[]}}`.
+9. **Factory reset** clears sessions, the login and the notices; it keeps the logs and does not
+   restart the process.
+10. **The old admin's "add credit" has no replacement here**; extend (`@nav-89000`) and remove
+    (`@nav-44232`) do. Free credit returns with the money engine (#7).
