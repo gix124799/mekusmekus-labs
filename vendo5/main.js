@@ -1,4 +1,3 @@
-const os = require('node:os');
 const path = require('node:path');
 const { loadConfig } = require('./lib/config');
 const { log } = require('./lib/logger');
@@ -82,7 +81,7 @@ try {
   const licence = createLicence({ stateDir });
   const mainlog = createMainLog({ dir: path.join(stateDir, 'mainlogs') });
   const sessions = createSessions({});
-  const pages = createPages({ root: uiDir, version, hostname: os.hostname() });
+  const pages = createPages({ root: uiDir, version, hostname: process.env.VENDO5_DEVICE_NAME || 'ETHYLNET' });
   const routes = createAdminRoutes({ pages, sessions, serveStatic: createStatic({ root: uiDir }) });
   const stats = createStats({ runCommand });
   const events = {
