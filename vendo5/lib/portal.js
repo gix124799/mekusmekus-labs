@@ -26,7 +26,15 @@ function toast(msg) {
   document.body.appendChild(t); setTimeout(function () { t.remove(); }, 3000);
 }
 function post(url, data) {
-  return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data || {}) }).then(function (r) { return r.json(); });
+  // final-review fix: a 401/404/500 response has an empty body; the old
+  // r.json() threw on it (unhandled rejection) for every caller. Read as
+  // text and parse defensively so callers always get an object back.
+  return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data || {}) }).then(function (r) {
+    return r.text().then(function (t) {
+      var parsed = {}; try { parsed = t ? JSON.parse(t) : {}; } catch (e) {}
+      return parsed;
+    });
+  });
 }
 ${script}
 </script>
@@ -107,13 +115,21 @@ const DASHBOARD_JS = `
 ${LOGOUT_JS}
 function renderSessions(s) {
   var tbody = document.getElementById('sessions-tbody');
+  // final-review fix: a 2s poll used to blow away an in-progress credit
+  // amount the admin was still typing. Capture non-empty values before
+  // replacing innerHTML and restore them for the same mac afterward.
+  var preserved = {};
+  document.querySelectorAll('[data-credit-input]').forEach(function (el) {
+    if (el.value) preserved[el.dataset.creditInput] = el.value;
+  });
   var macs = Object.keys(s);
   tbody.innerHTML = macs.length ? macs.map(function (mac) {
     var row = s[mac];
     var remaining = Math.max(0, Math.round((row.expiresAt - Date.now()) / 1000));
+    var val = preserved[mac] ? ' value="' + preserved[mac] + '"' : '';
     return '<tr><td>' + mac + '</td><td>' + row.creditPesos + '</td><td>' + remaining + 's</td>' +
       '<td><button data-revoke-mac="' + mac + '" class="ghost">Revoke</button> ' +
-      '<input data-credit-input="' + mac + '" type="number" min="1" step="1" style="width:4em;"> ' +
+      '<input data-credit-input="' + mac + '" type="number" min="1" step="1" style="width:4em;"' + val + '> ' +
       '<button data-credit-mac="' + mac + '" class="ghost">Add credit</button></td></tr>';
   }).join('') : '<tr><td colspan="4">No active sessions</td></tr>';
   wireActionButtons();
@@ -123,19 +139,36 @@ function renderLogs(lines) {
 }
 function wireActionButtons() {
   document.querySelectorAll('[data-revoke-mac]').forEach(function (btn) {
-    btn.onclick = function () { post('/admin/api/sessions/' + btn.dataset.revokeMac + '/revoke').then(refresh); };
+    btn.onclick = function () {
+      post('/admin/api/sessions/' + btn.dataset.revokeMac + '/revoke').then(function (r) {
+        if (!r.ok) toastada.error('Revoke failed, try again.');
+        refresh();
+      });
+    };
   });
   document.querySelectorAll('[data-credit-mac]').forEach(function (btn) {
     btn.onclick = function () {
       var mac = btn.dataset.creditMac;
       var input = document.querySelector('[data-credit-input="' + mac + '"]');
-      post('/admin/api/sessions/' + mac + '/credit', { pesos: Number(input.value) }).then(refresh);
+      post('/admin/api/sessions/' + mac + '/credit', { pesos: Number(input.value) }).then(function (r) {
+        if (!r.ok) toastada.error('Add credit failed.');
+        refresh();
+      });
     };
   });
 }
 function refresh() {
-  fetch('/admin/api/sessions').then(function (r) { return r.json(); }).then(renderSessions);
-  fetch('/admin/api/logs').then(function (r) { return r.json(); }).then(renderLogs);
+  // final-review fix: an empty 401 body used to throw inside r.json(),
+  // silently freezing the dashboard on a logged-out/restarted backend.
+  // Reload to the login form instead of polling forever against a 401.
+  function poll(url, render) {
+    fetch(url).then(function (r) {
+      if (r.status === 401) { location.reload(); return; }
+      return r.json().then(render);
+    }).catch(function () {});
+  }
+  poll('/admin/api/sessions', renderSessions);
+  poll('/admin/api/logs', renderLogs);
 }
 wireActionButtons();
 refresh();
@@ -166,7 +199,14 @@ function readJsonBody(req) {
     let body = '';
     req.on('data', (c) => { body += c; });
     req.on('end', () => {
-      try { resolve(JSON.parse(body || '{}')); } catch { resolve({}); }
+      let parsed;
+      try { parsed = JSON.parse(body || '{}'); } catch { parsed = {}; }
+      // final-review fix: a syntactically valid but non-object JSON body
+      // (null, an array, a bare number/string) used to be returned as-is,
+      // and every caller destructures it (`({ username, password })`,
+      // `({ pesos })`), which throws on anything that isn't a plain object
+      // -- an unhandled rejection that crashed the whole process.
+      resolve(parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {});
     });
   });
 }
@@ -245,7 +285,7 @@ function createServer({ session, firewall, arp, ratePesosPerMinute, adminAuth })
     if (req.method === 'POST' && req.url === '/admin/login') {
       readJsonBody(req).then(({ username, password }) => {
         const token = adminAuth.login(username, password);
-        if (token) res.setHeader('Set-Cookie', `${ADMIN_COOKIE}=${token}; HttpOnly; Path=/`);
+        if (token) res.setHeader('Set-Cookie', `${ADMIN_COOKIE}=${token}; HttpOnly; Path=/; SameSite=Strict`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: !!token }));
       });
@@ -273,11 +313,16 @@ function createServer({ session, firewall, arp, ratePesosPerMinute, adminAuth })
       return;
     }
 
-    const revokeMatch = req.url.match(/^\/admin\/api\/sessions\/([^/]+)\/revoke$/);
+    // final-review fix: hex/colon only (matches the spec's own regex) --
+    // this both removes the need for decodeURIComponent (whose URIError on
+    // malformed input was an uncaught, process-crashing exception) and
+    // makes an Object.prototype member name like "constructor"/"toString"
+    // structurally unable to match, since no such name is purely hex/colon.
+    const revokeMatch = req.url.match(/^\/admin\/api\/sessions\/([0-9a-fA-F:]+)\/revoke$/);
     if (req.method === 'POST' && revokeMatch) {
       if (!isAdminSession()) { res.writeHead(401).end(); return; }
-      const targetMac = decodeURIComponent(revokeMatch[1]);
-      if (!(targetMac in session.all())) { res.writeHead(404).end(); return; }
+      const targetMac = revokeMatch[1];
+      if (!Object.hasOwn(session.all(), targetMac)) { res.writeHead(404).end(); return; }
       try {
         firewall.revoke(targetMac);
       } catch (e) {
@@ -294,11 +339,11 @@ function createServer({ session, firewall, arp, ratePesosPerMinute, adminAuth })
       return;
     }
 
-    const creditMatch = req.url.match(/^\/admin\/api\/sessions\/([^/]+)\/credit$/);
+    const creditMatch = req.url.match(/^\/admin\/api\/sessions\/([0-9a-fA-F:]+)\/credit$/);
     if (req.method === 'POST' && creditMatch) {
       if (!isAdminSession()) { res.writeHead(401).end(); return; }
-      const targetMac = decodeURIComponent(creditMatch[1]);
-      if (!(targetMac in session.all())) { res.writeHead(404).end(); return; }
+      const targetMac = creditMatch[1];
+      if (!Object.hasOwn(session.all(), targetMac)) { res.writeHead(404).end(); return; }
       readJsonBody(req).then(({ pesos }) => {
         if (typeof pesos !== 'number' || !Number.isFinite(pesos) || pesos <= 0) {
           res.writeHead(400).end();
