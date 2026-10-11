@@ -29,6 +29,7 @@ v = lambda c, t='consumable': {'code': c, 'duration': 3600, 'upload': '10M', 'do
 json.dump({'ABC12345': v('ABC12345'), 'XYZ98765': v('XYZ98765', 'pausable')}, open(f'{work}/state/vouchers/list.json', 'w'))
 json.dump({'voucher-1': {'title': 'Promo', 'price': 5, 'data': [['ABC12345', 3600, 'Juan', 5, '10M', '20M', 'consumable', 'Promo']]}}, open(f'{work}/state/vouchers/tickets.json', 'w'))
 json.dump([{'ts': now - 5000, 'kind': 'coin', 'amount': 1, 'mac': 'aa:bb:cc:dd:ee:01'}, {'ts': now - 3000, 'kind': 'voucher', 'amount': 5, 'mac': 'aa:bb:cc:dd:ee:01', 'code': 'OLD11111', 'owner': 'Juan'}], open(f'{work}/state/sales.json', 'w'))
+if os.environ.get('THEME'): json.dump({'portalTheme': {'enable': True, 'script': '', 'set': os.environ['THEME']}}, open(f'{work}/state/settings.json', 'w'))
 env = dict(os.environ, VENDO5_CONFIG_DIR=f'{work}/cfg', VENDO5_DEFAULTS_DIR=f'{ROOT}/config', VENDO5_SESSION_FILE=f'{work}/sessions.json', VENDO5_STATE_DIR=f'{work}/state',
            VENDO5_UI_DIR=UI, VENDO5_GPIO_BASE=f'{work}/gpio', VENDO5_PORTAL_PORT=str(PORT), VENDO5_FIREWALL_CMD='noop', VENDO5_ARP_FAKE_MAC='aa:bb:cc:dd:ee:99',
            VENDO5_PROBE_JS=os.path.join(ROOT, 'scripts', 'probe-recorder.js'))

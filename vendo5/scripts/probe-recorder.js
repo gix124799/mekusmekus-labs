@@ -2,6 +2,9 @@
 // each property the page reads (and whether it exists), and records any exception the page's callback throws.
 window.__rec = {}; window.__errs = [];
 (function () {
+  addEventListener('error', function (e) { window.__errs.push(String(e.message) + ' @' + e.filename + ':' + e.lineno); });
+  addEventListener('unhandledrejection', function (e) { window.__errs.push('rej:' + String(e.reason)); });
+  if (typeof io === 'undefined') return;
   var S = io.Socket.prototype, orig = S.onack, emit = S.emit;
   window.__emits = []; S.emit = function (ev) { window.__lastEv = ev; window.__emits.push(ev); (window.__args = window.__args || []).push(ev + ':' + JSON.stringify(Array.prototype.slice.call(arguments, 1).filter(function (a) { return typeof a !== 'function'; }))); return emit.apply(this, arguments); };
   function wrap(v, path) {

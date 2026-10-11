@@ -205,7 +205,7 @@ try {
   const ops = createPortalOps({ sessions: session, firewall, clients, credits, sales, settings, access, mainlog, clientLog, save: () => session.save() });
   const wallet = createWallet({ clients, sessions: session, firewall, settings, ratePesosPerMinute: () => pesos_per_minute, access, mainlog, clientLog, save: () => session.save() });
   const portalPages = createPortalPages({ root: uiDir, version, hostname: deviceName, keys: PORTAL_KEYS, hide: () => ({}),
-    theme: () => settings.read().portalTheme.set || 'defualt-theme', redirect: () => settings.read().redirect,
+    theme: () => settings.read().portalTheme.set || 'defualt-theme', redirect: () => settings.read().redirect, custom: () => { const t = settings.read().portalTheme; return t.enable ? t.script : ''; },
     headScript: process.env.VENDO5_PROBE_JS ? `<script>${require('node:fs').readFileSync(process.env.VENDO5_PROBE_JS, 'utf8')}</script>` : '' });
   const portalEvents = createPortalHandlers({ sessions: session, money, ops, wallet, clients, settings, clientLog, chat: { clientHasUnread: (m) => chat.clientHasUnread(m), markClientSeen: (m) => chat.markClientSeen(m), history: (m) => chat.history(m), send: (m, t) => clientSend({ chat, push }, m, t) }, media, vouchers, arp, version,
     listenCoin: (mac, socket) => hooks.listenCoin(mac, socket), stopCoin: (mac) => hooks.stopCoin(mac), ratePesosPerMinute: () => pesos_per_minute });

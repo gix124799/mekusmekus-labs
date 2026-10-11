@@ -17,6 +17,8 @@ function attachPortal(httpServer, { events, identify, log = () => {}, now = Date
   });
 
   io.on('connection', (socket) => {
+    // a page asking for something we do not know (another theme's protocol) is worth seeing in the log
+    socket.onAny((ev, ...a) => { if (!events[ev]) log('warn', 'portal: event with no handler', { ev: String(ev).slice(0, 60), args: JSON.stringify(a.filter((x) => typeof x !== 'function')).slice(0, 200), auth: JSON.stringify(socket.handshake.auth).slice(0, 80) }); });
     let windowStart = now();
     let count = 0;
     for (const [id, def] of Object.entries(events)) {

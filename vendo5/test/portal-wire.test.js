@@ -64,3 +64,13 @@ test('portal page, theme files, coins into the wallet, then Connect', async () =
     assert.equal(await ask(c, K(5)), 'Connected');
   } finally { c.close(); s.stop(); }
 });
+
+test('the Themes page script is added to the portal page (and only when enabled)', () => {
+  const { createPortalPages } = require('../lib/ui/portal-pages');
+  let script = 'window.mine=1</script><b>';
+  const mk = () => createPortalPages({ root: UI, version: '1', hostname: 'x', keys: [], custom: () => script });
+  const html = mk().render('dashboard');
+  assert.ok(html.includes('<script>window.mine=1<\\/script><b></script></body>'));
+  script = '';
+  assert.ok(!mk().render('dashboard').includes('window.mine'));
+});

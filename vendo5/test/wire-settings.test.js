@@ -186,7 +186,7 @@ test('themes: licence note, the two shipped themes, set/unset, and the portal sc
   assert.equal(r.call('@nav-453648', { action: 'GET2-ENABLE' }), false);
   assert.deepEqual(r.call('@nav-453648', { action: 'SET2', theme: 'console.log(1)', password: 'pw' }), { success: 'Success' });
   assert.equal(r.call('@nav-453648', { action: 'GET2' }), 'console.log(1)');
-  assert.deepEqual(r.call('@nav-453648', { action: 'SET2', theme: 'x' }), { err: 'Invalid password' });
+  assert.deepEqual(r.call('@nav-453648', { action: 'SET2', theme: 'x' }), { success: 'Success' }, 'no vendor password offline');
   assert.deepEqual(r.call('@nav-453648', { action: 'SET2', theme: 'x'.repeat(20001), password: 'pw' }), { err: 'The script is too long' });
   assert.deepEqual(r.call('@nav-453648', { action: 'SET2' }), { success: 'Theme disabled' });
   assert.equal(r.call('@nav-453648', { action: 'GET2' }), '');

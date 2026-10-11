@@ -19,7 +19,7 @@ function defaultHide() {
 // The customer portal: the original theme's index.html with its placeholders filled the way the original server
 // did -- {1} device name, {2} extra head markup, {3} the page script, {4} the globals the scripts read (the event
 // name table `wisft` as base64 JSON, `hideoptions`, `redirecturl`).
-function createPortalPages({ root, version, hostname, keys, theme = () => 'defualt-theme', hide = () => ({}), redirect = () => '', headScript = '' }) {
+function createPortalPages({ root, version, hostname, keys, theme = () => 'defualt-theme', hide = () => ({}), redirect = () => '', headScript = '', custom = () => '' }) {
   const host = escapeHtml(String(hostname).toUpperCase());
   const cache = new Map();
   const template = (name) => {
@@ -34,11 +34,14 @@ function createPortalPages({ root, version, hostname, keys, theme = () => 'defua
     render(page) {
       const name = THEMES.includes(theme()) ? theme() : THEMES[0];
       let html = template(name);
-      if (name !== 'defualt-theme') return html; // the React theme is a single page of its own
+      const extra = String(custom() || '');
+      // the admin's own theme script (Themes page), run last on the page
+      const withCustom = (h) => (extra ? h.replace(/<\/body>/i, () => `<script>${extra.replace(/<\/(script)/gi, '<\\/$1')}</script></body>`) : h);
+      if (name !== 'defualt-theme') return withCustom(headScript ? html.replace('<head>', () => `<head>${headScript}`) : html); // the React theme is a single page of its own
       if (!html.includes(SOCKET_TAG)) throw new Error('client index.html: the socket.io.js script tag the leaving-shim follows was not found');
       html = html.replace(SOCKET_TAG, SOCKET_TAG + LEAVING_SHIM + headScript);
       const globals = `var wisft=${json(Buffer.from(JSON.stringify(keys)).toString('base64'))};var hideoptions=${json({ ...defaultHide(), ...hide() })};var redirecturl=${json(String(redirect() || ''))};`;
-      return html.replace('{1}', host).replace('{2}', '').replace('{3}', PAGES.includes(page) ? page : 'dashboard').replace('{4}', globals).replace(/\{5\}/g, escapeHtml(version));
+      return withCustom(html.replace('{1}', host).replace('{2}', '').replace('{3}', PAGES.includes(page) ? page : 'dashboard').replace('{4}', globals).replace(/\{5\}/g, escapeHtml(version)));
     },
   };
 }

@@ -165,7 +165,6 @@ function createSettingsHandlers({ settings, mainlog, restart = () => {}, deviceN
       if (p.action === 'SET2') {
         if (p.theme === undefined || p.theme === '') { settings.change((s) => { s.portalTheme.script = ''; }); return { success: 'Theme disabled' }; }
         if (typeof p.theme !== 'string' || p.theme.length > 20000) return { err: 'The script is too long' };
-        if (typeof p.password !== 'string' || !p.password) return { err: 'Invalid password' };
         settings.change((s) => { s.portalTheme.script = p.theme; });
         log('Admin saved the portal theme script');
         return { success: 'Success' };
