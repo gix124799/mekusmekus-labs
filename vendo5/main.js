@@ -31,6 +31,8 @@ const { createResellers } = require('./lib/store/resellers');
 const { createResellerAdminHandlers, createResellerPortalHandlers } = require('./lib/wire/resellers');
 const { createResellerRoutes } = require('./lib/ui/reseller-routes');
 const { createFileHandlers } = require('./lib/wire/files');
+const { createChatHandlers, clientSend } = require('./lib/wire/chat');
+const { createChat } = require('./lib/store/chat');
 const { createFileArea } = require('./lib/system/files');
 const { createMediaHandlers } = require('./lib/wire/media');
 const { createMedia, partitionsFromLsblk } = require('./lib/store/media');
@@ -161,7 +163,11 @@ try {
     ? () => { try { return partitionsFromLsblk(runCommand(['lsblk', '-J', '-b', '-o', 'NAME,LABEL,MOUNTPOINT,SIZE,VENDOR,MODEL'])); } catch { return []; } }
     : () => { require('node:fs').mkdirSync(mediaDir, { recursive: true }); return [{ name: 'sda1', mountpoint: mediaDir, fssize: 8 * 1024 ** 3, label: 'MEDIA', info: { vendor: 'Development', model: 'Folder' } }]; };
   const media = createMedia({ partitions, stateFile: path.join(stateDir, 'media.json') });
+  const chat = createChat({ dir: path.join(stateDir, 'chat') });
+  let pushToAdmins = () => {}; // set once the socket server exists
+  const push = (ev, payload) => pushToAdmins(ev, payload);
   const events = {
+    ...createChatHandlers({ chat, clients, online: () => new Set(Object.entries(session.all()).filter(([m]) => session.isActive(m)).map(([m]) => m)), push, mainlog }),
     ...createMediaHandlers({ media, mainlog }),
     ...createFileHandlers({ area: fileArea, mainlog }),
     ...createPppoeHandlers({ store: pppoeStore, system: pppoeSystem, mainlog }),
@@ -192,14 +198,15 @@ try {
   const resellerEvents = createResellerPortalHandlers({ sessions: resellerSessions, resellers, vouchers, credits, tickets, sales, licence, mainlog, version });
   events['@nav-00112347'] = createResellerAdminHandlers({ resellers, mainlog })['@nav-00112347'];
   const routes = (req, res) => resellerRoutes(req, res) || adminRoutes(req, res);
-  admin = { routes, events, sessions, resellerEvents, resellerSessions, mainlog, money, sales, access, clientLog, settings };
+  admin = { chatApi: { history: (m) => chat.history(m), send: (m, t) => clientSend({ chat, push }, m, t), seen: (m) => chat.markClientSeen(m) }, setPush: (f) => { pushToAdmins = f; }, routes, events, sessions, resellerEvents, resellerSessions, mainlog, money, sales, access, clientLog, settings };
 } catch (e) {
   log('error', 'admin page unavailable; the portal runs without it', { error: e.message });
 }
 
-const { server, consumePendingPayer } = createServer({ session, arp, ratePesosPerMinute: pesos_per_minute, adminRoutes: admin && admin.routes, money: admin && admin.money });
+const { server, consumePendingPayer } = createServer({ session, arp, ratePesosPerMinute: pesos_per_minute, adminRoutes: admin && admin.routes, money: admin && admin.money, chat: admin && admin.chatApi });
 if (admin) {
-  attachWire(server, { events: admin.events, sessions: admin.sessions, log });
+  const adminIo = attachWire(server, { events: admin.events, sessions: admin.sessions, log });
+  admin.setPush((ev, payload) => adminIo.pushAuthed(ev, payload));
   attachWire(server, { events: admin.resellerEvents, sessions: admin.resellerSessions, log, cookieName: 'vendo5_rsid', path: '/reseller', landing: '/reseller' });
 }
 

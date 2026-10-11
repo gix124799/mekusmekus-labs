@@ -39,6 +39,14 @@ function attachWire(httpServer, { events, sessions, log = () => {}, cookieName =
     for (const l of wired) l.call(httpServer, req, res);
   });
 
+  // Tell every socket whose session is still logged in (chat messages must never reach the login page's sockets).
+  io.pushAuthed = (event, payload) => {
+    for (const sock of io.sockets.sockets.values()) {
+      const s = sessions.get(sock.data.sid);
+      if (s && s.allowed) sock.emit(event, payload);
+    }
+  };
+
   io.use((socket, next) => {
     socket.data.sid = parseCookies(socket.request.headers.cookie)[cookieName] || '';
     next();

@@ -55,6 +55,11 @@ function clientPage() {
 <button id="voucher-redeem">USE VOUCHER</button>
 <button id="client-pause" style="display:none">PAUSE</button>
 </div>
+<div class="card" id="chat-card" style="display:none">
+<div id="chat-log" style="max-height:160px;overflow:auto;text-align:left;font-size:13px"></div>
+<input id="chat-text" placeholder="Message the owner" maxlength="500" autocomplete="off">
+<button id="chat-send">SEND</button>
+</div>
 <div class="tag">They Invent. We Reinvent.</div>
 </div>`, `
 document.getElementById('client-insert-coin').onclick = function () {
@@ -71,6 +76,22 @@ document.getElementById('client-pause').onclick = function () {
   var paused = this.dataset.paused === '1';
   post(paused ? '/api/resume' : '/api/pause').then(function (r) { if (!r.ok) toastada.error(r.message || 'Error'); poll(); });
 };
+function pollChat() {
+  fetch('/api/chat').then(function (r) { return r.json(); }).then(function (d) {
+    var card = document.getElementById('chat-card'); card.style.display = '';
+    var log = document.getElementById('chat-log'); log.textContent = '';
+    Object.keys(d.messages || {}).sort(function (a, b) { return a - b; }).forEach(function (k) {
+      var m = d.messages[k], div = document.createElement('div');
+      div.textContent = (m.sender === 'admin' ? 'Owner: ' : 'You: ') + (m.type === 'text' ? m.message.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'") : '(emoji)');
+      log.appendChild(div);
+    });
+    log.scrollTop = log.scrollHeight;
+  }).catch(function () {});
+}
+document.getElementById('chat-send').onclick = function () {
+  var t = document.getElementById('chat-text');
+  if (t.value) post('/api/chat', { message: t.value }).then(function () { t.value = ''; pollChat(); });
+};
 function poll() {
   fetch('/api/status').then(function (r) { return r.json(); }).then(function (s) {
     var m = Math.floor(s.remainingSeconds / 60), sec = s.remainingSeconds % 60;
@@ -85,7 +106,7 @@ function poll() {
     pb.textContent = s.paused ? 'RESUME' : 'PAUSE';
   });
 }
-poll(); setInterval(poll, 2000);`);
+poll(); setInterval(poll, 2000); pollChat(); setInterval(pollChat, 5000);`);
 }
 
 function serveThemeFile(urlPath, res) {
@@ -123,7 +144,7 @@ function reply(res, r) {
   res.end(JSON.stringify(r));
 }
 
-function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money }) {
+function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, chat }) {
   let pendingPayer = null; // { mac, at }
 
   // Ruling (code-review fix pass): don't clear on a successful consume —
@@ -189,6 +210,17 @@ function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money }) 
     }
     if (money && req.method === 'POST' && (req.url === '/api/pause' || req.url === '/api/resume')) {
       reply(res, req.url === '/api/pause' ? money.pause(mac) : money.resume(mac));
+      return;
+    }
+
+    // The client's side of Chat: read the conversation, send a message.
+    if (chat && mac && req.method === 'GET' && req.url === '/api/chat') {
+      reply(res, { messages: chat.history(mac) });
+      chat.seen(mac);
+      return;
+    }
+    if (chat && req.method === 'POST' && req.url === '/api/chat') {
+      readJsonBody(req).then((b) => reply(res, { ok: !!mac && typeof b.message === 'string' && !!chat.send(mac, b.message) }));
       return;
     }
 
