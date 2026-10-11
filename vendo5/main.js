@@ -201,14 +201,14 @@ try {
       save: () => session.save(),
     }),
   };
-  const hooks = { listenCoin: () => ({ ok: false, message: 'Not ready' }), pushTo: () => {} }; // set once the sockets exist
+  const hooks = { stopCoin: () => {}, listenCoin: () => ({ ok: false, message: 'Not ready' }), pushTo: () => {} }; // set once the sockets exist
   const ops = createPortalOps({ sessions: session, firewall, clients, credits, sales, settings, access, mainlog, clientLog, save: () => session.save() });
   const wallet = createWallet({ clients, sessions: session, firewall, settings, ratePesosPerMinute: () => pesos_per_minute, access, mainlog, clientLog, save: () => session.save() });
   const portalPages = createPortalPages({ root: uiDir, version, hostname: deviceName, keys: PORTAL_KEYS, hide: () => ({}),
     theme: () => settings.read().portalTheme.set || 'defualt-theme', redirect: () => settings.read().redirect,
     headScript: process.env.VENDO5_PROBE_JS ? `<script>${require('node:fs').readFileSync(process.env.VENDO5_PROBE_JS, 'utf8')}</script>` : '' });
   const portalEvents = createPortalHandlers({ sessions: session, money, ops, wallet, clients, settings, clientLog, chat: { clientHasUnread: (m) => chat.clientHasUnread(m), markClientSeen: (m) => chat.markClientSeen(m), history: (m) => chat.history(m), send: (m, t) => clientSend({ chat, push }, m, t) }, media, vouchers, arp, version,
-    listenCoin: (mac, socket) => hooks.listenCoin(mac, socket), ratePesosPerMinute: () => pesos_per_minute });
+    listenCoin: (mac, socket) => hooks.listenCoin(mac, socket), stopCoin: (mac) => hooks.stopCoin(mac), ratePesosPerMinute: () => pesos_per_minute });
   const resellers = createResellers({ file: path.join(stateDir, 'resellers.json') });
   const resellerSessions = createSessions({});
   const resellerRoutes = createResellerRoutes({ root: uiDir, version, hostname: deviceName, sessions: resellerSessions, resellers });
@@ -242,6 +242,7 @@ if (admin) {
     armInsert(mac);
     return { ok: true, countdown: wait / 1000, expiry: Date.now() + wait };
   };
+  admin.hooks.stopCoin = (mac) => endInsert(mac, portalIo);
   // a coin while the popup is open goes to the device's wallet (the Done/Connect button turns it into time)
   admin.portalCoin = (mac, pesos) => {
     if (!inserts.has(mac)) return false;

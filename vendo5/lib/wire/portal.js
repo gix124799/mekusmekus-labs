@@ -8,7 +8,7 @@ const decode = (t) => String(t).replace(/&amp;/g, '&').replace(/&lt;/g, '<').rep
 
 // The customer portal's events. The original page emits `keys[n]` for operation n; n is fixed by the page, the names
 // are ours (the table goes to the page in the `wisft` global). Every handler answers for the device behind the socket.
-function createPortalHandlers({ sessions, money, ops, wallet, clients, settings, clientLog, chat, push, media, vouchers, sales, arp, listenCoin, version, now = Date.now, ratePesosPerMinute, mainlog }) {
+function createPortalHandlers({ sessions, money, ops, wallet, clients, settings, clientLog, chat, push, media, vouchers, sales, arp, listenCoin, stopCoin = () => {}, version, now = Date.now, ratePesosPerMinute, mainlog }) {
   const guarded = (fallback, handler) => ({ fallback, handler });
   const cfg = () => settings.read();
   const noDevice = 'Device not recognised';
@@ -82,10 +82,12 @@ function createPortalHandlers({ sessions, money, ops, wallet, clients, settings,
     // Insert coin: the device becomes the pending payer; coins then fill its wallet (pushes 20/21 tell the page)
     [K(13)]: guarded({ message: 'Error' }, (p, ctx) => {
       if (!ctx.mac) return { message: noDevice };
+      // the popup's Close button sends type 0
+      if (asObj(p).type === 0) { stopCoin(ctx.mac); return { message: 'Closed', countdown: 0 }; }
       const r = listenCoin(ctx.mac, ctx.socket);
       if (!r.ok) return { message: r.message };
       const s = sessions.getSession(ctx.mac);
-      return { message: s && s.paused ? 'Resume' : 'Insert', rate: { rates: rateCfg().rate, type: rateCfg().set.type }, countdown: r.countdown, expiry: r.expiry };
+      return { message: s && s.paused ? 'Resume' : 'Insert', rate: { rates: rateCfg().rate, type: rateCfg().set.type, rtype: rateCfg().set.type }, countdown: r.countdown, countdownMax: cfg().main.countdownMax, expiry: r.expiry };
     }),
     [K(14)]: guarded({ vendoList: {} }, () => { const m = cfg().main; return { vendoList: { main: { id: 'main', name: m.name, insertbtn: m.insertbtn, countdownMax: m.countdownMax } }, lastinsertedvendo: 'main' }; }),
     [K(15)]: guarded({ rates: [] }, () => ({ rates: rateCfg().rate.filter((r) => r.show !== false), type: rateCfg().set.type, lastinsertedvendo: 'main' })),

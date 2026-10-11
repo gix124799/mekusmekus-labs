@@ -94,6 +94,7 @@ def main():
                         'voucherset': {'hour': {'profile': 'hour', 'type': 'consumable', 'length': 6, 'random': True, 'prefix': 'RS', 'upload': '2M', 'download': '5M', 'duration': 3600, 'price': 5, 'notsametype': 0}},
                         'creditset': {}}}, open(f'{work}/state/resellers.json', 'w'))
     os.makedirs(f'{work}/state', exist_ok=True)
+    json.dump({'aa:bb:cc:dd:ee:99': {'mac': 'aa:bb:cc:dd:ee:99', 'name': '', 'credit': 3, 'point': 4, 'total': 0}}, open(f'{work}/state/clients.json', 'w'))
     json.dump({str(now): {'title': 'Welcome', 'icon': 'mdi-information-outline', 'message': 'First notice', 'read': False}},
               open(f'{work}/state/notification.json', 'w'))
     env = dict(os.environ, VENDO5_CONFIG_DIR=f'{work}/cfg', VENDO5_DEFAULTS_DIR=f'{ROOT}/config', VENDO5_SESSION_FILE=f'{work}/sessions.json',
@@ -274,6 +275,55 @@ def main():
             check('reseller logout returns to its login', until(lambda: rd.find_elements(By.ID, 'login-btn')))
         finally:
             rd.quit()
+
+        print('\n== CUSTOMER PORTAL ==')
+        pd = webdriver.Firefox(options=o, service=Service(os.environ.get('GECKODRIVER', '/snap/bin/geckodriver')))
+        try:
+            pd.set_window_size(480, 1000)
+            pbody = lambda: pd.execute_script('return document.body.textContent').lower()
+            pd.get(URL + '/?page=dashboard'); arm(pd)
+            check('the portal is the original page (device name from the settings)', until(lambda: 'ethylnet' in pbody()))
+            check('the wallet shows the 3 pesos', until(lambda: '3.00' in pbody()), pbody()[:200])
+            check('the portal shows the voucher session the admin tests left on this device', until(lambda: 'status:connected' in pbody().replace(' ', '').replace('\n', ''), 15))
+            d4 = pd.execute_async_script("var done=arguments[arguments.length-1];io().emit('@portal-4',null,function(a){done(a)})")
+            check('Pause (the same button) answers Paused for a pausable session', d4 == 'Paused', str(d4))
+            pd.get(URL + '/?page=dashboard'); arm(pd)
+            check('the dashboard now says Paused', until(lambda: 'status:paused' in pbody().replace(' ', '').replace('\n', ''), 15))
+            d4 = pd.execute_async_script("var done=arguments[arguments.length-1];io().emit('@portal-4',null,function(a){done(a)})")
+            check('the same button resumes it', d4 == 'Connected', str(d4))
+            pd.get(URL + '/?page=dashboard'); arm(pd)
+            for pg in ('eload', 'logs', 'media'):
+                pd.get(URL + f'/?page={pg}'); arm(pd); time.sleep(2.5)
+                check(f'portal page {pg} raised no JavaScript error', errs(pd) == [], str(errs(pd))[:200])
+            pd.get(URL + '/?page=dashboard'); arm(pd); time.sleep(2)
+            check('the portal loaded nothing from outside', foreign_requests(pd) == [], str(foreign_requests(pd)))
+            # the coin popup: open it over the socket, pulse the coin pin, the wallet grows, Connect turns it into time
+            ins = lambda: next((e for e in pd.find_elements(By.TAG_NAME, 'button') if ' '.join(e.text.lower().split()) == 'insert coin' and e.is_displayed()), None)
+            time.sleep(3)
+            until(ins).click()
+            if not until(lambda: pd.find_elements(By.CSS_SELECTOR, '#modal-alert-34.show'), 4):
+                ins().click()
+            time.sleep(2); shot(pd, 'portal-after-insert')
+            check('the Insert Coin popup opens', until(lambda: pd.find_elements(By.CSS_SELECTOR, '#modal-alert-34.show')))
+            until(lambda: pd.find_element(By.ID, 'insert-close-d').is_displayed()).__class__
+            pd.find_element(By.ID, 'insert-close-d').click()
+            check('its Close button closes it', until(lambda: not pd.find_elements(By.CSS_SELECTOR, '#modal-alert-34.show')))
+            r = pd.execute_async_script("var done=arguments[arguments.length-1],s=io();var got=null;s.on('@portal-20',function(m){got=m});"
+                                        "s.emit('@portal-13',{},function(a){window.__a13=a;setTimeout(function(){done(JSON.stringify(a))},100)});")
+            check('Insert Coin answers Insert with the countdown', json.loads(r).get('message') == 'Insert', r)
+            open(f'{work}/gpio/gpio17/value', 'w').write('1')
+            coin = until(lambda: pd.execute_script("return window.__coin||null"), 0.1)
+            time.sleep(1.5)
+            info = json.loads(pd.execute_async_script("var done=arguments[arguments.length-1];io().emit('@portal-2',null,function(a){done(JSON.stringify(a))})"))
+            check('a coin pulse adds one peso to the wallet', info.get('credit') == 4, str(info.get('credit')))
+            c = pd.execute_async_script("var done=arguments[arguments.length-1];io().emit('@portal-11',2,function(a){done(a)})")
+            check('Connect with 2 pesos of credit succeeds', c == 'Success', str(c))
+            pd.get(URL + '/?page=dashboard'); arm(pd)
+            check('the dashboard now says Connected', until(lambda: 'status:connected' in pbody().replace(' ', '').replace('\n', ''), 15))
+            check('the connected dashboard raised no JavaScript error', errs(pd) == [], str(errs(pd))[:200])
+            shot(pd, 'portal-connected')
+        finally:
+            pd.quit()
 
         print('\n== LOGOUT ==')
         out = until(lambda: next((e for e in d.find_elements(By.ID, 'logout') if e.is_displayed()), None))

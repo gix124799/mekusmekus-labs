@@ -43,8 +43,11 @@ function createGpio(base = '/sys/class/gpio', fs = nodeFs) {
       if (watcher) watcher.close();
       try { unexportPin(pin); } catch (e) { log('warn', e.message, { pin }); }
     };
+    let last = null;
+    try { last = readPin(pin); } catch { /* first event reads it */ }
+    // one write to the value file raises several change events; a callback only for a real change of level
     watcher = fs.watch(path.join(dir, 'value'), () => {
-      try { callback(readPin(pin)); } catch (e) { log('error', e.message, { pin }); }
+      try { const v = readPin(pin); if (v === last) return; last = v; callback(v); } catch (e) { log('error', e.message, { pin }); }
     });
     watcher.on('error', (e) => { log('error', `gpio pin ${pin}: watch failed: ${e.message}`, { pin }); stop(); });
     return stop;

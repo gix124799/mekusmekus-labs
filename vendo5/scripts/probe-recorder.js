@@ -3,7 +3,7 @@
 window.__rec = {}; window.__errs = [];
 (function () {
   var S = io.Socket.prototype, orig = S.onack, emit = S.emit;
-  window.__emits = []; S.emit = function (ev) { window.__lastEv = ev; window.__emits.push(ev); return emit.apply(this, arguments); };
+  window.__emits = []; S.emit = function (ev) { window.__lastEv = ev; window.__emits.push(ev); (window.__args = window.__args || []).push(ev + ':' + JSON.stringify(Array.prototype.slice.call(arguments, 1).filter(function (a) { return typeof a !== 'function'; }))); return emit.apply(this, arguments); };
   function wrap(v, path) {
     if (!v || typeof v !== 'object') return v;
     return new Proxy(v, { get: function (t, k) {
