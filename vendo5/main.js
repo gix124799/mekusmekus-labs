@@ -182,7 +182,7 @@ try {
     ...createMediaHandlers({ media, mainlog }),
     ...createFileHandlers({ area: fileArea, mainlog }),
     ...createPppoeHandlers({ store: pppoeStore, system: pppoeSystem, mainlog }),
-    ...createNetworkHandlers({ file: path.join(stateDir, 'network.json'), uci, runCommand, arp, mainlog, leasesFile: process.env.VENDO5_LEASES_FILE || '/tmp/dhcp.leases', crontabFile: process.env.VENDO5_CRONTAB || (hasUbus ? '/etc/crontabs/root' : path.join(stateDir, 'crontab')) }),
+    ...createNetworkHandlers({ file: path.join(stateDir, 'network.json'), uci, runCommand, arp, mainlog, leasesFile: process.env.VENDO5_LEASES_FILE || (hasUbus ? '/mnt/wifi5/dhcp.leases' : '/tmp/dhcp.leases'), crontabFile: process.env.VENDO5_CRONTAB || (hasUbus ? '/etc/crontabs/root' : path.join(stateDir, 'crontab')) }),
     ...createSystemHandlers({ appDir, runCommand, mainlog, restart, enabled: updateEnabled }),
     ...createSettingsHandlers({ settings, mainlog, deviceName, restart, version, lanInterface: config.network.lan_interface }),
     ...createDeviceHandlers({ clients, access, clientLog, sessions: session, money, firewall, mainlog, save: () => session.save() }),

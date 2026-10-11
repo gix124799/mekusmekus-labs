@@ -1,7 +1,9 @@
+config globals 'globals'
+	option packet_steering '1'
 
 # vendo5 network provisioning. Topology (per owner): Orange Pi One's
 # built-in Ethernet = WAN (upstream internet, DHCP client). A USB-to-LAN
-# adapter's port = LAN, bridged as 'br-lan' at a fixed 10.0.0.1/24. A
+# adapter's port = LAN, bridged as 'br-lan' at a fixed 10.0.0.1/19 (the original's /19). A
 # separate standalone access point device plugs into that LAN port over
 # Ethernet (AP mode) — no Wi-Fi config needed on this device itself.
 #
@@ -32,4 +34,4 @@ config interface 'lan'
 	option device 'br-lan'
 	option proto 'static'
 	option ipaddr '10.0.0.1'
-	option netmask '255.255.255.0'
+	option netmask '255.255.224.0'
