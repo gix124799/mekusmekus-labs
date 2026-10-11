@@ -451,3 +451,21 @@ test('POST credit requires a valid admin session', async () => {
     server.close();
   }
 });
+
+test('dashboard includes a log panel element and the polling script, logged in only', async () => {
+  const adminAuth = fakeAdminAuth('tok123');
+  const sessionStore = { ...fakeSession(true), all: () => ({}) };
+  const { server } = createServer({ session: sessionStore, firewall: fakeFirewall(), arp: fakeArp('m1'), ratePesosPerMinute: 1, adminAuth });
+  const port = await listen(server);
+  try {
+    const loggedIn = await request(port, 'GET', '/admin', { headers: { Cookie: 'vendo5_admin=tok123' } });
+    assert.match(loggedIn.body, /id="logs-panel"/);
+    assert.match(loggedIn.body, /\/admin\/api\/logs/);
+    assert.match(loggedIn.body, /setInterval/);
+
+    const loggedOut = await request(port, 'GET', '/admin');
+    assert.doesNotMatch(loggedOut.body, /id="logs-panel"/); // login form has no dashboard, no polling
+  } finally {
+    server.close();
+  }
+});

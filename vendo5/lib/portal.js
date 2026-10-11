@@ -99,14 +99,53 @@ function dashboardContent(sessionsByMac, now = Date.now()) {
 <table><thead><tr><th>MAC</th><th>Credit (&#8369;)</th><th>Remaining</th><th></th></tr></thead>
 <tbody id="sessions-tbody">${rows || '<tr><td colspan="4">No active sessions</td></tr>'}</tbody></table>
 </div>
+<div class="card"><h2>Recent Activity</h2><pre id="logs-panel" style="max-height:300px;overflow:auto;"></pre></div>
 <div class="top"><span></span><button id="logout-btn" class="ghost">Logout</button></div>`;
 }
+
+const DASHBOARD_JS = `
+${LOGOUT_JS}
+function renderSessions(s) {
+  var tbody = document.getElementById('sessions-tbody');
+  var macs = Object.keys(s);
+  tbody.innerHTML = macs.length ? macs.map(function (mac) {
+    var row = s[mac];
+    var remaining = Math.max(0, Math.round((row.expiresAt - Date.now()) / 1000));
+    return '<tr><td>' + mac + '</td><td>' + row.creditPesos + '</td><td>' + remaining + 's</td>' +
+      '<td><button data-revoke-mac="' + mac + '" class="ghost">Revoke</button> ' +
+      '<input data-credit-input="' + mac + '" type="number" min="1" step="1" style="width:4em;"> ' +
+      '<button data-credit-mac="' + mac + '" class="ghost">Add credit</button></td></tr>';
+  }).join('') : '<tr><td colspan="4">No active sessions</td></tr>';
+  wireActionButtons();
+}
+function renderLogs(lines) {
+  document.getElementById('logs-panel').textContent = lines.map(function (l) { return JSON.stringify(l); }).join('\\n');
+}
+function wireActionButtons() {
+  document.querySelectorAll('[data-revoke-mac]').forEach(function (btn) {
+    btn.onclick = function () { post('/admin/api/sessions/' + btn.dataset.revokeMac + '/revoke').then(refresh); };
+  });
+  document.querySelectorAll('[data-credit-mac]').forEach(function (btn) {
+    btn.onclick = function () {
+      var mac = btn.dataset.creditMac;
+      var input = document.querySelector('[data-credit-input="' + mac + '"]');
+      post('/admin/api/sessions/' + mac + '/credit', { pesos: Number(input.value) }).then(refresh);
+    };
+  });
+}
+function refresh() {
+  fetch('/admin/api/sessions').then(function (r) { return r.json(); }).then(renderSessions);
+  fetch('/admin/api/logs').then(function (r) { return r.json(); }).then(renderLogs);
+}
+wireActionButtons();
+refresh();
+setInterval(refresh, 2000);`;
 
 function adminPage(content, loggedIn) {
   return shell('Admin | MekusMekus Vendo', `<div class="wrap wide">
 <img class="banner" src="/theme/banner.jpg" alt="MekusMekus Labs">
 ${content}
-</div>`, loggedIn ? LOGOUT_JS : LOGIN_JS);
+</div>`, loggedIn ? DASHBOARD_JS : LOGIN_JS);
 }
 
 const ADMIN_COOKIE = 'vendo5_admin';
