@@ -135,12 +135,12 @@ test('every enabled page is served to a logged-in admin, and a disabled one boun
   try {
     const { sock, cookie } = await login(s.port, 'admin', 'admin');
     await req(s.port, 'POST', '/admin', { cookie, body: '', type: 'application/x-www-form-urlencoded' });
-    for (const page of ['dashboard', 'logs']) {
+    for (const page of ['dashboard', 'logs', 'vouchers', 'settings']) {
       const r = await req(s.port, 'GET', `/admin?page=${page}`, { cookie });
       assert.equal(r.status, 200, page);
       assert.ok(r.body.includes(`script/${page}.js`), page);
     }
-    const hidden = await req(s.port, 'GET', '/admin?page=chat', { cookie });
+    const hidden = await req(s.port, 'GET', '/admin?page=nonexistent', { cookie });
     assert.equal(hidden.status, 302);
     assert.equal(hidden.headers.location, '/admin?page=dashboard');
     sock.close();

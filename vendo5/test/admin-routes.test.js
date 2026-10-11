@@ -64,7 +64,7 @@ test('logged in: the shell for an enabled page, a redirect for a missing or disa
     const shell = await r.call('GET', '/admin?page=logs', { cookie });
     assert.equal(shell.status, 200);
     assert.ok(shell.body.includes('/nav/script/logs.js?version=1.2.3'));
-    for (const url of ['/admin', '/admin?page=eload-sales', '/admin?page=', '/admin?page=../../etc', '/admin?page=<script>', '/admin?page=dashboard%00']) {
+    for (const url of ['/admin', '/admin?page=nonexistent', '/admin?page=', '/admin?page=../../etc', '/admin?page=<script>', '/admin?page=dashboard%00']) {
       const res = await r.call('GET', url, { cookie });
       assert.equal(res.status, 302, url);
       assert.equal(res.headers.location, '/admin?page=dashboard', url);

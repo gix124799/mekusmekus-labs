@@ -124,8 +124,7 @@ def main():
 
         print('\n== DASHBOARD ==')
         arm(d)
-        check('menu shows only the finished pages', until(lambda: sorted(set(a.get_attribute('href').split('page=')[1] for a in d.find_elements(By.CSS_SELECTOR, '#sidebar a[href*="page="], .sidebar a[href*="page="]'))) == ['dashboard', 'logs', 'vouchers']),
-              str([a.get_attribute('href') for a in d.find_elements(By.CSS_SELECTOR, 'a[href*="page="]')]))
+        check('the menu carries every page of the original (31 of them)', until(lambda: len(set(a.get_attribute('href').split('page=')[1] for a in d.find_elements(By.CSS_SELECTOR, 'a.nav-link[href*="page="]'))) == 31), str(len(d.find_elements(By.CSS_SELECTOR, 'a.nav-link[href*="page="]'))))
         body = lambda: d.execute_script('return document.body.textContent').lower()  # textContent: rows scroll inside a clipped box
         check('the first seeded session is listed', until(lambda: M1 in body()), body()[:300])
         check('the second seeded session is listed', until(lambda: M2 in body()))
@@ -207,9 +206,9 @@ def main():
         time.sleep(3)
         check('dashboard raised no JavaScript error', errs(d) == [], str(errs(d)))
         check('every request stayed on our origin', foreign_requests(d) == [], str(foreign_requests(d)))
-        for page in ('chat', 'eload-sales', 'phone-rental'):
+        for page in ('nonexistent', '../etc', 'ticket2'):
             d.get(f'{URL}/admin?page={page}')
-            check(f'hidden page {page} falls back to the dashboard', until(lambda: 'page=dashboard' in d.current_url))
+            check(f'unknown page {page} falls back to the dashboard', until(lambda: 'page=dashboard' in d.current_url))
 
         check('the server logged no error during the whole run', '"level":"error"' not in open(logf).read(), open(logf).read()[-400:])
 

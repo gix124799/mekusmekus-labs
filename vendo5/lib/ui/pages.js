@@ -3,7 +3,9 @@ const path = require('node:path');
 
 // Pages that work today. Each later sub-project adds its ids here. 'chat' and 'console' are
 // not menu pages: they gate the top-bar chat envelope and the web-terminal icon.
-const DEFAULT_ENABLED = ['dashboard', 'logs', 'vouchers', 'credit', 'sales', 'vcsales', 'devices'];
+// Every page of the original menu is shown (plus the navbar chat link and the console button). A page whose
+// backend is not built yet loads but has no data; the pages are filled in sub-project by sub-project.
+const DEFAULT_ENABLED = ['dashboard', 'eload-profile', 'eload-product', 'eload-sales', 'eload-logs', 'payment-profile', 'payment-sales', 'payment-logs', 'media', 'chat', 'devices', 'phone-rental', 'phone-rental-sales', 'vouchers', 'credit', 'pppoe-account', 'pppoe-html', 'pppoe-billing', 'reseller', 'themes', 'settings', 'ntp-client', 'scheduler', 'sales', 'vcsales', 'interfaces', 'dhcp', 'utility', 'nft', 'leases', 'wireless', 'logs', 'console'];
 
 // Profile-menu items that need features this product does not have (remote update from a URL,
 // software up/download, data export/import). Hidden until a later sub-project builds them.
