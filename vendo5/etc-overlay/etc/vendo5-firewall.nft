@@ -52,6 +52,8 @@ table inet vendo5 {
 
 	chain forward {
 		type filter hook forward priority filter; policy drop;
+		# replies to what a paid client started: without this the WAN->LAN half of every connection is dropped here
+		ct state established,related accept
 		iifname "br-lan" oifname "eth0" ether saddr @allowed accept
 		iifname "br-lan" oifname "eth0" ip daddr @walled accept
 		# unpaid traffic to the portal's own app (port 3000) and to the

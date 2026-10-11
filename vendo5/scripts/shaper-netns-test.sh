@@ -18,7 +18,6 @@ nsenter -t $WP -n sh -c "ip addr add 10.9.0.2/24 dev w0; ip link set w0 up; ip l
 sysctl -qw net.ipv4.ip_forward=1
 nft -f $R/etc-overlay/etc/vendo5-firewall.nft
 nft add element inet vendo5 allowed '{ aa:bb:cc:dd:ee:01 }'
-nft insert rule inet vendo5 forward ct state established,related accept
 head -c 3000000 /dev/zero > $J/blob
 (cd $J && nsenter -t $WP -n python3 -m http.server 8088 >/dev/null 2>&1 &) ; sleep 1
 ping -c1 -W1 10.0.0.5 >/dev/null || true
@@ -37,5 +36,14 @@ sh.tick();
 nsenter -t $CP -n python3 - <<PY
 import time,urllib.request
 t=time.time(); n=len(urllib.request.urlopen('http://10.9.0.2:8088/blob',timeout=60).read()); print('download', n, 'bytes in %.1fs'%(time.time()-t))
+PY
+echo "--- after revoke (not allowed): the same download must fail"
+nft delete element inet vendo5 allowed '{ aa:bb:cc:dd:ee:01 }'
+nsenter -t $CP -n python3 - <<PY
+import urllib.request
+try:
+    urllib.request.urlopen('http://10.9.0.2:8088/blob', timeout=3).read(); print('FAIL: revoked client still got through')
+except Exception as e:
+    print('PASS: revoked client blocked (%s)' % type(e).__name__)
 PY
 nft list chain inet vendo5 bwlimit | grep -o 'comment.*\|bytes [0-9]*' | head -6
