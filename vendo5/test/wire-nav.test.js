@@ -61,7 +61,6 @@ test('dashboard with no sessions', () => {
 test('passthrough, name lookup, licence, serial, redeem', () => {
   const { nav } = setup();
   assert.deepEqual(call(nav, '@nav-23441', 'ubus call system info'), { ran: 'ubus call system info' });
-  assert.deepEqual(call(nav, '@nav-77833'), { client: { clientInfo: [] } });
   const l = call(nav, '@nav-232003');
   assert.equal(l.status, 'activated');
   assert.equal(l.code, 'SER1');

@@ -176,7 +176,7 @@ function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money }) 
     const mac = clientMac(req);
 
     if (req.method === 'POST' && req.url === '/api/pay-intent') {
-      const ok = mac ? setPendingPayer(mac) : false;
+      const ok = mac && !(money && money.blocked(mac)) ? setPendingPayer(mac) : false;
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok }));
       return;

@@ -61,9 +61,6 @@ function createNavHandlers({ sessions, firewall, arp, stats, passthrough, mainlo
 
     '@nav-23441': guarded({}, (payload) => passthrough(payload)),
 
-    // The client-name lookup the dashboard uses for its "name" column; vendo5 keeps no client names.
-    '@nav-77833': guarded({}, () => ({ client: { clientInfo: [] } })),
-
     '@nav-232003': guarded({}, () => {
       const l = licence.licence();
       return { status: 'activated', code: l.serial, level: 'Unlimited', hotspot: l.hotspot, pppoe: l.pppoe, vendo: 'Yes', eload: 'Yes', movie: l.movie ? 'Yes' : 'No', serial: l.serial, expiration: l.expiration };

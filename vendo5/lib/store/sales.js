@@ -4,13 +4,14 @@ const { jsonFile } = require('./jsonfile');
 // Capped so flash cannot fill; the oldest records go first.
 const MAX = 20000;
 
-function createSales({ file, now = Date.now }) {
+function createSales({ file, now = Date.now, onAdd = () => {} }) {
   const store = jsonFile(file, []);
   return {
     add(rec) {
       const all = store.read();
       all.push({ ts: now(), ...rec });
       store.write(all.length > MAX ? all.slice(all.length - MAX) : all);
+      try { onAdd(all[all.length - 1]); } catch { /* a side effect must not undo the record */ }
     },
     all: () => store.read(),
     clear: () => store.write([]),

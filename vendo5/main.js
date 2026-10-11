@@ -19,6 +19,10 @@ const { createMainHandlers } = require('./lib/wire/main');
 const { createNavHandlers } = require('./lib/wire/nav');
 const { createMoneyHandlers } = require('./lib/wire/money');
 const { createSalesHandlers } = require('./lib/wire/sales');
+const { createDeviceHandlers } = require('./lib/wire/devices');
+const { createClients } = require('./lib/store/clients');
+const { createAccess } = require('./lib/store/access');
+const { createClientLog } = require('./lib/store/clientlog');
 const { createVouchers } = require('./lib/store/vouchers');
 const { createTickets } = require('./lib/store/tickets');
 const { createCredits } = require('./lib/store/credits');
@@ -98,9 +102,15 @@ try {
   const vouchers = createVouchers({ file: path.join(stateDir, 'vouchers', 'list.json') });
   const tickets = createTickets({ file: path.join(stateDir, 'vouchers', 'tickets.json') });
   const credits = createCredits({ file: path.join(stateDir, 'credits', 'list.json') });
-  const sales = createSales({ file: path.join(stateDir, 'sales.json') });
-  const money = createMoney({ vouchers, credits, ratePesosPerMinute: () => pesos_per_minute, sessions: session, firewall, sales, mainlog, save: () => session.save() });
+  const clients = createClients({ file: path.join(stateDir, 'clients.json') });
+  const access = createAccess({ file: path.join(stateDir, 'access.json') });
+  const clientLog = createClientLog({ dir: path.join(stateDir, 'userlogs') });
+  // devices on the always-allowed list stay through a restart (the firewall sync above flushed them)
+  for (const mac of Object.keys(access.get().whitelist)) { try { firewall.allow(mac.toLowerCase()); } catch (e) { log('error', 'whitelist allow failed', { mac, error: e.message }); } }
+  const sales = createSales({ file: path.join(stateDir, 'sales.json'), onAdd: (r) => { if (r.mac) clients.addTotal(r.mac, r.amount); } });
+  const money = createMoney({ vouchers, credits, access, clientLog, ratePesosPerMinute: () => pesos_per_minute, sessions: session, firewall, sales, mainlog, save: () => session.save() });
   const events = {
+    ...createDeviceHandlers({ clients, access, clientLog, sessions: session, money, firewall, mainlog, save: () => session.save() }),
     ...createSalesHandlers({ sales, deviceName, mainlog }),
     ...createMoneyHandlers({ vouchers, credits, tickets, sessions: session, mainlog, endSession: money.endSession, save: () => session.save() }),
     ...createMainHandlers({ account, sessions, licence, mainlog, version }),
@@ -117,7 +127,7 @@ try {
       save: () => session.save(),
     }),
   };
-  admin = { routes, events, sessions, mainlog, money, sales };
+  admin = { routes, events, sessions, mainlog, money, sales, access, clientLog };
 } catch (e) {
   log('error', 'admin page unavailable; the portal runs without it', { error: e.message });
 }
@@ -143,6 +153,7 @@ try {
     session.addCredit(mac, pulse_value_pesos, pesos_per_minute);
     if (admin) {
       admin.mainlog.write('system', `Coin: ${pulse_value_pesos} peso(s) credited to ${mac}`);
+      admin.clientLog.write(mac, `Coin: ${pulse_value_pesos} peso(s)`);
       try { admin.sales.add({ kind: 'coin', amount: pulse_value_pesos, mac }); } catch (e) { log('error', 'sales record failed', { error: e.message }); }
     }
     try {
