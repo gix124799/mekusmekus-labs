@@ -52,11 +52,14 @@ These use an emulated uci on a development machine. On the Pi they must use the 
 - [ ] `/etc/ppp/chap-secrets` is written from the PPPoE accounts page.
 - [ ] A PPPoE client can connect; ip-up/ip-down hooks create and remove its session record.
 - [ ] Billing and expiry sweep disconnect an expired account.
-- [ ] Per-account speed limits are applied (shaping is NOT implemented beyond the hook; expect no limit).
+- [ ] Per-account speed limits are applied (PPPoE sessions are not in the `bwlimit` chain; only the ppp hook limits them).
 
 ## 6. Sessions, limits, vouchers
 - [ ] Voucher login, extend, credit code into wallet, free trial (once per device), redeem points, spin wheel.
-- [ ] Upload/download limits on a voucher: **not enforced yet** (no bandwidth shaping). Confirm and decide.
+- [ ] Upload/download limits on a voucher (nft policing in the `bwlimit` chain): a phone on a 1M voucher downloads at about 125 KB/s,
+      uploads likewise; `nft list chain inet vendo5 bwlimit` shows its rules; they disappear on pause/expiry.
+      (Already proven in a private namespace: `unshare -Urn bash scripts/shaper-netns-test.sh`. Real Wi-Fi/DHCP not yet.)
+- [ ] Data cap (e.g. voucher `500M`): usage shows on the portal and the vouchers page; the session ends at the cap.
 - [ ] Reseller portal (`/reseller`) generates vouchers that a phone can use.
 - [ ] Chat: portal message reaches admin; admin reply and auto-reply reach the phone.
 - [ ] Both portal themes (default and React `newTheme`) load on a real phone browser.
@@ -70,7 +73,7 @@ These use an emulated uci on a development machine. On the Pi they must use the 
 - [ ] 24-hour soak: coins, vouchers, pause/resume, several phones at once, no errors in `logread`.
 
 ## Known gaps to expect
-- Bandwidth limits per voucher/PPPoE account are stored, not enforced.
+- Speed limits are packet policing (excess dropped), not queue shaping; PPPoE accounts' own limits still go only through the ppp hook.
 - E-load, online payment, phone rental and the vendor cloud are intentionally offline (pages open, purchases refused).
 - Phone-rental page swallows two JavaScript errors in its own code (cloud-only, nothing visible).
 - Trial, redeem-item and spin reply fields were inferred from obfuscated scripts; check them against real use.

@@ -44,6 +44,12 @@ table inet vendo5 {
 		iifname "br-lan" ether saddr != @allowed tcp dport 80 dnat ip to 10.0.0.1:3000
 	}
 
+	# Per-device speed limits and byte counters; lib/system/shaper.js rewrites this chain (flush + rules) as one
+	# `nft -f` transaction. Runs just before the forward chain's accept rules.
+	chain bwlimit {
+		type filter hook forward priority filter - 1; policy accept;
+	}
+
 	chain forward {
 		type filter hook forward priority filter; policy drop;
 		iifname "br-lan" oifname "eth0" ether saddr @allowed accept

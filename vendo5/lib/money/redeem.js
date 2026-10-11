@@ -1,3 +1,4 @@
+const { cleanData } = require('./limits');
 const LOCK_AFTER = 5;
 const LOCK_MS = 5 * 60000;
 
@@ -154,7 +155,7 @@ function createMoney({ vouchers, credits, access, clientLog, ratePesosPerMinute 
     const t = now();
     const before = sessions.getSession(mac) ? structuredClone(sessions.getSession(mac)) : null;
     const type = Number(p.type) === 1 ? 'pausable' : 'consumable';
-    sessions.addTime(mac, p.duration * 1000, { type, upload: p.upload, download: p.download, max_data_limit: p.max_data_limit > 0 ? p.max_data_limit : undefined, pauselimit: type === 'pausable' && p.pauselimit > 0 ? p.pauselimit : undefined, validityHours: type === 'pausable' ? p.validity : undefined }, t);
+    sessions.addTime(mac, p.duration * 1000, { type, upload: p.upload, download: p.download, max_data_limit: cleanData(p.max_data_limit), pauselimit: type === 'pausable' && p.pauselimit > 0 ? p.pauselimit : undefined, validityHours: type === 'pausable' ? p.validity : undefined }, t);
     if (!before || !before.paused) {
       try {
         firewall.allow(mac);

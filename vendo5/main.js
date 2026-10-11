@@ -40,6 +40,7 @@ const { createPortalHandlers, KEYS: PORTAL_KEYS } = require('./lib/wire/portal')
 const { attachPortal } = require('./lib/wire/portal-server');
 const { createThemeResolver } = require('./lib/wire/portal-v2');
 const { createPortalOps } = require('./lib/money/portal-ops');
+const { createShaper } = require('./lib/system/shaper');
 const { createWallet } = require('./lib/money/wallet');
 const { createFileArea } = require('./lib/system/files');
 const { createMediaHandlers } = require('./lib/wire/media');
@@ -313,6 +314,13 @@ try {
   });
 } catch (e) {
   log('error', 'coin gpio unavailable; portal runs without coin input', { pin: coin_pin, error: e.message });
+}
+
+// Speed limits and data caps (nft `bwlimit` chain); a device over its cap loses its session.
+if (admin) {
+  const shaper = createShaper({ runCommand, sessions: session, arp, file: path.join(stateDir, 'limits.nft'), save: () => session.save(), log,
+    onCap: (mac) => { admin.money.endSession(mac); admin.mainlog.write('system', `Data cap reached: session of ${mac} ended`); admin.clientLog.write(mac, 'Data cap reached'); } });
+  setInterval(() => { try { shaper.tick(); } catch (e) { log('error', 'bandwidth limit pass failed', { error: e.message }); } }, 2000).unref();
 }
 
 setInterval(() => {

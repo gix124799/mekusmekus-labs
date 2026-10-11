@@ -17,7 +17,7 @@ function createMoneyHandlers({ vouchers, credits, tickets, sessions, mainlog, en
         const e = {
           code: s.code, mac: s.mac, type: s.type || 'consumable', notsametype: s.notsametype ? 1 : 0,
           uploadLimit: s.upload || 'Unlimited', downloadLimit: s.download || 'Unlimited',
-          lastactive: t, max_data_limit: s.max_data_limit, total_upload_data: 0, total_download_data: 0,
+          lastactive: t, max_data_limit: s.max_data_limit, total_upload_data: s.usedUp || 0, total_download_data: s.usedDown || 0,
         };
         if (s.pauselimit !== undefined) e.pauselimit = s.pauselimit;
         if (s.validityEnd) e.validity = s.validityEnd;

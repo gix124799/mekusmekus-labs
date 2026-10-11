@@ -1,3 +1,4 @@
+const { cleanData } = require('../money/limits');
 const crypto = require('node:crypto');
 const { jsonFile, lineLog } = require('./jsonfile');
 
@@ -57,7 +58,7 @@ function createVouchers({ file, usedFile = file.replace(/\.json$/, '') + '.used'
         } while (all[code] || made.some((v) => v.code === code));
       }
       const v = { code, duration, upload: String(p.upload), download: String(p.download), type, notsametype: Number(p.notsametype) === 1 ? 1 : 0, genfrom: owner, price, created: now() };
-      if (Number(p.max_data_limit) > 0) v.max_data_limit = Number(p.max_data_limit);
+      if (cleanData(p.max_data_limit) !== undefined) v.max_data_limit = cleanData(p.max_data_limit);
       if (type === 'pausable') {
         if (Number(p.pauselimit) > 0) v.pauselimit = Number(p.pauselimit);
         if (Number(p.validity) > 0) v.validity = Number(p.validity);

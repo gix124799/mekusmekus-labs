@@ -1,3 +1,4 @@
+const { cleanData } = require('../money/limits');
 const { jsonFile } = require('./jsonfile');
 
 const AREAS = ['vouchers', 'credits', 'cvused', 'sales', 'ticket'];
@@ -35,7 +36,7 @@ function createResellers({ file }) {
     const prefix = String(p.prefix || '').toUpperCase();
     if (!/^[A-Z0-9]*$/.test(prefix) || prefix.length > 8) return { err: 'Invalid prefix' };
     const out = { profile: String(p.profile), type, length, random: true, prefix, upload: String(p.upload), download: String(p.download), duration, price, notsametype: Number(p.notsametype) === 1 ? 1 : 0 };
-    if (Number(p.max_data_limit) > 0) out.max_data_limit = Number(p.max_data_limit);
+    if (cleanData(p.max_data_limit) !== undefined) out.max_data_limit = cleanData(p.max_data_limit);
     if (type === 'pausable') { if (Number(p.pauselimit) > 0) out.pauselimit = Number(p.pauselimit); if (Number(p.validity) > 0) out.validity = Number(p.validity); }
     return out;
   }

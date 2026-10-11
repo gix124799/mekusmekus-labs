@@ -1,4 +1,5 @@
 const { timeForPesos } = require('../money/rates');
+const { dataBytes } = require('../money/limits');
 
 const asObj = (v) => (v && typeof v === 'object' ? v : {});
 const KEYS = Array.from({ length: 46 }, (_, i) => `@portal-${i}`);
@@ -22,7 +23,7 @@ function createPortalHandlers({ sessions, money, ops, wallet, clients, settings,
     const live = !!s && (s.paused || s.expiresAt > t);
     const out = {
       internet: true, interface: 'br-lan', id: mac || '', mac: mac || '', address: (mac && ipOf(mac)) || ctx.ip || '', credit: c.credit || 0, point: c.point || 0,
-      status: !live ? 'Disconnected' : s.paused ? 'Paused' : s.disconnected ? 'Disconnected' : 'Connected', now: t, trial: false, lastinsertedvendo: 'main', max_data_limit: (s && s.max_data_limit) || 0, start_date: (s && s.startedAt) || 0, total_download_data: 0, total_upload_data: 0,
+      status: !live ? 'Disconnected' : s.paused ? 'Paused' : s.disconnected ? 'Disconnected' : 'Connected', now: t, trial: false, lastinsertedvendo: 'main', max_data_limit: dataBytes(s && s.max_data_limit), start_date: (s && s.startedAt) || 0, total_download_data: (s && s.usedDown) || 0, total_upload_data: (s && s.usedUp) || 0,
       ulimit: (s && s.upload) || '', dlimit: (s && s.download) || '', RXRate: 0, TXRate: 0, upload: 0, download: 0, code: (s && s.code) || '', resduration: '00:00:00',
     };
     out.validity = 0;
