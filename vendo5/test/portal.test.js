@@ -359,3 +359,95 @@ test('dashboard HTML includes a Revoke control per session row', async () => {
     server.close();
   }
 });
+
+test('POST credit on an unknown mac returns 404 and makes no session/firewall call', async () => {
+  const adminAuth = fakeAdminAuth('tok123');
+  const firewall = fakeFirewall();
+  const sessionStore = { ...fakeSession(false), all: () => ({}), addCredit: () => { throw new Error('must not be called'); } };
+  const { server } = createServer({ session: sessionStore, firewall, arp: fakeArp('m1'), ratePesosPerMinute: 1, adminAuth });
+  const port = await listen(server);
+  try {
+    const res = await request(port, 'POST', '/admin/api/sessions/unknown-mac/credit', { headers: { Cookie: 'vendo5_admin=tok123', 'Content-Type': 'application/json' }, body: JSON.stringify({ pesos: 5 }) });
+    assert.equal(res.status, 404);
+    assert.deepEqual(firewall.calls, []);
+  } finally {
+    server.close();
+  }
+});
+
+for (const bad of [0, -1, 'five', null, undefined, NaN]) {
+  test(`POST credit rejects invalid pesos value: ${JSON.stringify(bad)}`, async () => {
+    const adminAuth = fakeAdminAuth('tok123');
+    const firewall = fakeFirewall();
+    const sessionStore = { ...fakeSession(false), all: () => ({ m1: { mac: 'm1', creditPesos: 1, expiresAt: Date.now() + 60000 } }), addCredit: () => { throw new Error('must not be called'); } };
+    const { server } = createServer({ session: sessionStore, firewall, arp: fakeArp('m1'), ratePesosPerMinute: 1, adminAuth });
+    const port = await listen(server);
+    try {
+      const res = await request(port, 'POST', '/admin/api/sessions/m1/credit', { headers: { Cookie: 'vendo5_admin=tok123', 'Content-Type': 'application/json' }, body: JSON.stringify({ pesos: bad }) });
+      assert.equal(res.status, 400);
+      assert.deepEqual(firewall.calls, []);
+    } finally {
+      server.close();
+    }
+  });
+}
+
+test('POST credit, success path: session.addCredit before firewall.allow', async () => {
+  const adminAuth = fakeAdminAuth('tok123');
+  const firewall = fakeFirewall();
+  const order = [];
+  const sessionStore = {
+    ...fakeSession(false),
+    all: () => ({ m1: { mac: 'm1', creditPesos: 1, expiresAt: Date.now() + 60000 } }),
+    addCredit: (mac, pesos, rate) => { order.push(['addCredit', mac, pesos, rate]); },
+    save: () => { order.push(['save']); },
+  };
+  const { server } = createServer({ session: sessionStore, firewall, arp: fakeArp('m1'), ratePesosPerMinute: 2, adminAuth });
+  const port = await listen(server);
+  try {
+    const res = await request(port, 'POST', '/admin/api/sessions/m1/credit', { headers: { Cookie: 'vendo5_admin=tok123', 'Content-Type': 'application/json' }, body: JSON.stringify({ pesos: 7 }) });
+    assert.equal(res.status, 200);
+    assert.deepEqual(JSON.parse(res.body), { ok: true });
+    assert.deepEqual(order, [['addCredit', 'm1', 7, 2], ['save']]);
+    assert.deepEqual(firewall.calls, [['allow', 'm1']]);
+  } finally {
+    server.close();
+  }
+});
+
+test('POST credit, firewall.allow throws: credit is kept, not rolled back', async () => {
+  const adminAuth = fakeAdminAuth('tok123');
+  const firewall = fakeFirewall({ allowThrows: true });
+  let creditCalled = false;
+  let saveCalled = false;
+  const sessionStore = {
+    ...fakeSession(false),
+    all: () => ({ m1: { mac: 'm1', creditPesos: 1, expiresAt: Date.now() + 60000 } }),
+    addCredit: () => { creditCalled = true; },
+    save: () => { saveCalled = true; },
+  };
+  const { server } = createServer({ session: sessionStore, firewall, arp: fakeArp('m1'), ratePesosPerMinute: 1, adminAuth });
+  const port = await listen(server);
+  try {
+    const res = await request(port, 'POST', '/admin/api/sessions/m1/credit', { headers: { Cookie: 'vendo5_admin=tok123', 'Content-Type': 'application/json' }, body: JSON.stringify({ pesos: 3 }) });
+    assert.equal(res.status, 200); // still 200 -- credit was kept, only the firewall call failed
+    assert.deepEqual(JSON.parse(res.body), { ok: true });
+    assert.equal(creditCalled, true);
+    assert.equal(saveCalled, true);
+  } finally {
+    server.close();
+  }
+});
+
+test('POST credit requires a valid admin session', async () => {
+  const adminAuth = fakeAdminAuth('tok123');
+  const sessionStore = { ...fakeSession(false), all: () => ({ m1: { mac: 'm1', creditPesos: 1, expiresAt: Date.now() + 60000 } }) };
+  const { server } = createServer({ session: sessionStore, firewall: fakeFirewall(), arp: fakeArp('m1'), ratePesosPerMinute: 1, adminAuth });
+  const port = await listen(server);
+  try {
+    const res = await request(port, 'POST', '/admin/api/sessions/m1/credit', { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pesos: 3 }) });
+    assert.equal(res.status, 401);
+  } finally {
+    server.close();
+  }
+});

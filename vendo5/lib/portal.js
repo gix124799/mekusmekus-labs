@@ -90,7 +90,9 @@ function dashboardContent(sessionsByMac, now = Date.now()) {
   const rows = list.map((s) => {
     const remaining = Math.max(0, Math.round((s.expiresAt - now) / 1000));
     return `<tr data-mac-row="${escapeHtml(s.mac)}"><td>${escapeHtml(s.mac)}</td><td>${s.creditPesos}</td><td>${remaining}s</td>` +
-      `<td><button data-revoke-mac="${escapeHtml(s.mac)}" class="ghost">Revoke</button></td></tr>`;
+      `<td><button data-revoke-mac="${escapeHtml(s.mac)}" class="ghost">Revoke</button> ` +
+      `<input data-credit-input="${escapeHtml(s.mac)}" type="number" min="1" step="1" style="width:4em;"> ` +
+      `<button data-credit-mac="${escapeHtml(s.mac)}" class="ghost">Add credit</button></td></tr>`;
   }).join('');
   return `<div class="card">
 <h2>Active Sessions: ${list.length} &middot; Credit: &#8369;${total}</h2>
@@ -250,6 +252,30 @@ function createServer({ session, firewall, arp, ratePesosPerMinute, adminAuth })
       log('info', 'admin revoke', { action: 'revoke', mac: targetMac, admin: true });
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    const creditMatch = req.url.match(/^\/admin\/api\/sessions\/([^/]+)\/credit$/);
+    if (req.method === 'POST' && creditMatch) {
+      if (!isAdminSession()) { res.writeHead(401).end(); return; }
+      const targetMac = decodeURIComponent(creditMatch[1]);
+      if (!(targetMac in session.all())) { res.writeHead(404).end(); return; }
+      readJsonBody(req).then(({ pesos }) => {
+        if (typeof pesos !== 'number' || !Number.isFinite(pesos) || pesos <= 0) {
+          res.writeHead(400).end();
+          return;
+        }
+        session.addCredit(targetMac, pesos, ratePesosPerMinute);
+        try {
+          firewall.allow(targetMac);
+        } catch (e) {
+          log('error', 'admin credit: firewall allow failed', { action: 'credit', mac: targetMac, pesos, admin: true, error: e.message });
+        }
+        session.save();
+        log('info', 'admin credit', { action: 'credit', mac: targetMac, pesos, admin: true });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      });
       return;
     }
 
