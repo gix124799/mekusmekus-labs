@@ -101,7 +101,7 @@ test('the captive portal still answers every other path', async () => {
   try {
     const home = await req(s.port, 'GET', '/generate_204');
     assert.equal(home.status, 200);
-    assert.match(home.body, /client-insert-coin/);
+    assert.match(home.body, /client\/script\/dashboard\.js/);
     assert.equal((await req(s.port, 'GET', '/main/js/md5.js')).status, 200);
     assert.equal((await req(s.port, 'GET', '/admin/')).headers.location, '/admin?page=dashboard');
   } finally { s.stop(); }

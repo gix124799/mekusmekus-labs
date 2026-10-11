@@ -144,7 +144,7 @@ function reply(res, r) {
   res.end(JSON.stringify(r));
 }
 
-function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, chat }) {
+function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, chat, portal }) {
   let pendingPayer = null; // { mac, at }
 
   // Ruling (code-review fix pass): don't clear on a successful consume —
@@ -153,22 +153,22 @@ function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, ch
   // an actual TTL lapse with no intervening pulse frees the slot.
   function consumePendingPayer(now = Date.now()) {
     if (!pendingPayer) return null;
-    const { mac, at } = pendingPayer;
-    if (now - at > PAY_INTENT_TTL_MS) {
+    const { mac, at, ttl } = pendingPayer;
+    if (now - at > ttl) {
       pendingPayer = null;
       return null;
     }
-    pendingPayer = { mac, at: now };
+    pendingPayer = { mac, at: now, ttl };
     return mac;
   }
 
   // A different MAC may not steal an already-active pending-payer slot;
   // the same MAC always refreshes its own window.
-  function setPendingPayer(mac, now = Date.now()) {
-    if (pendingPayer && pendingPayer.mac !== mac && now - pendingPayer.at <= PAY_INTENT_TTL_MS) {
+  function setPendingPayer(mac, now = Date.now(), ttl = PAY_INTENT_TTL_MS) {
+    if (pendingPayer && pendingPayer.mac !== mac && now - pendingPayer.at <= pendingPayer.ttl) {
       return false;
     }
-    pendingPayer = { mac, at: now };
+    pendingPayer = { mac, at: now, ttl };
     return true;
   }
 
@@ -189,6 +189,12 @@ function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, ch
     if (req.method === 'GET' && req.url.startsWith('/theme/')) {
       serveThemeFile(req.url, res);
       return;
+    }
+
+    // the customer portal's theme files live in the selected theme's folder
+    if (portal && req.url.startsWith('/client/theme/')) {
+      req.url = req.url.replace('/client/theme/', `/client/${portal.themeDir()}/`);
+      if (portal.serveStatic(req, res)) return;
     }
 
     // /admin and the admin frontend's static files; before clientMac(), which shells out to `ip neigh`.
@@ -234,11 +240,20 @@ function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, ch
       return;
     }
 
+    // The original customer portal: its theme's files under /client/theme/, everything else is the page itself
+    // (captive-portal probes land here on any path, so any other GET answers with the page).
+    if (portal && (req.method === 'GET' || req.method === 'HEAD')) {
+      const page = new URL(req.url, 'http://x').searchParams.get('page');
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(portal.render(page));
+      return;
+    }
+
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(clientPage());
   });
 
-  return { server, consumePendingPayer };
+  return { server, consumePendingPayer, setPendingPayer };
 }
 
 module.exports = { createServer };

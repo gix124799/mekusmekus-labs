@@ -15,6 +15,7 @@ function createClients({ file }) {
     store.write(all);
     return true;
   };
+  const read1 = (mac) => (MAC.test(String(mac)) ? store.read()[String(mac).toLowerCase()] : null);
   return {
     all: () => store.read(),
     list(extraMacs = []) {
@@ -23,6 +24,16 @@ function createClients({ file }) {
       return all;
     },
     addPoints: (mac, pts) => edit(mac, (r) => { r.point += pts; }),
+    credit: (mac) => (read1(mac) || { credit: 0 }).credit,
+    // add (or, negative, take) wallet pesos; never below zero; false when the wallet cannot cover it
+    addCredit(mac, delta) {
+      if (!Number.isFinite(delta)) return false;
+      let ok = true;
+      const done = edit(mac, (r) => { if (r.credit + delta < 0) { ok = false; return; } r.credit = Math.round((r.credit + delta) * 100) / 100; });
+      return done && ok;
+    },
+    trialUsed: (mac) => !!(read1(mac) || {}).trial,
+    markTrial: (mac) => edit(mac, (r) => { r.trial = true; }),
     addTotal: (mac, pesos) => edit(mac, (r) => { r.total += pesos; }),
     setName: (mac, name) => typeof name === 'string' && name.length <= 40 && edit(mac, (r) => { r.name = name; }),
     setCredit: (mac, v) => Number.isFinite(v) && v >= 0 && edit(mac, (r) => { r.credit = v; }),
