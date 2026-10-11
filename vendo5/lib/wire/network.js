@@ -241,8 +241,6 @@ function createNetworkHandlers({ file, uci, runCommand, arp, mainlog, leasesFile
     '@nav-262098': guarded({}, () => ({ info: 'Ngrok tunnels are not used on this device: it works offline.' })),
     '@nav-222098': guarded({}, () => ({ info: 'Ngrok tunnels are not used on this device: it works offline.' })),
 
-    // PPPoE server status belongs to the PPPoE pages (sub-project #11)
-    '@nav-00782399': guarded({}, () => ({})),
   };
 }
 

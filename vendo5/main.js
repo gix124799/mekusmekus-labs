@@ -26,6 +26,11 @@ const { createSystemHandlers } = require('./lib/wire/system');
 const { timeForPesos, profileFor } = require('./lib/money/rates');
 const { createUci } = require('./lib/system/uci');
 const { createNetworkHandlers } = require('./lib/wire/network');
+const { createPppoeHandlers } = require('./lib/wire/pppoe');
+const { createFileHandlers } = require('./lib/wire/files');
+const { createFileArea } = require('./lib/system/files');
+const { createPppoe } = require('./lib/store/pppoe');
+const { createPppoeSystem } = require('./lib/system/pppoe');
 const { createNetCommands } = require('./lib/system/netcmd');
 const { createClients } = require('./lib/store/clients');
 const { createAccess } = require('./lib/store/access');
@@ -115,12 +120,17 @@ try {
   const appDir = __dirname;
   // Installing software replaces this very directory, so it is only allowed on the device (under its supervisor).
   const updateEnabled = process.env.VENDO5_SUPERVISED === '1';
-  const routes = createAdminRoutes({ pages, sessions, serveStatic: createStatic({ root: uiDir }), system: { stateDir, version, restart, mainlog, appDir, runCommand, updateEnabled } });
+  const fileArea = createFileArea({ root: path.join(stateDir, 'pppoe-html') });
+  const routes = createAdminRoutes({ pages, sessions, files: fileArea, serveStatic: createStatic({ root: uiDir }), system: { stateDir, version, restart, mainlog, appDir, runCommand, updateEnabled } });
   // OpenWrt has ubus; a development machine does not, and then the same pages run against an emulated uci.
   const hasUbus = process.env.VENDO5_FIREWALL_CMD !== 'noop' && ['/bin/ubus', '/sbin/ubus', '/usr/bin/ubus', '/usr/sbin/ubus'].some((f) => require('node:fs').existsSync(f));
   const stats = createStats({ runCommand, standIns: hasUbus ? [] : ['eth0', 'eth1'] });
   const uci = createUci({ runCommand, stateFile: path.join(stateDir, 'uci-emulated.json'), hasUbus });
   const net = createNetCommands({ runCommand, uci });
+  const pppoeStore = createPppoe({ file: path.join(stateDir, 'pppoe.json') });
+  const pppoeSystem = createPppoeSystem({ store: pppoeStore, secretsFile: process.env.VENDO5_PPP_SECRETS || (hasUbus ? '/etc/ppp/chap-secrets' : path.join(stateDir, 'ppp', 'chap-secrets')), limitsDir: path.join(stateDir, 'ppp', 'limits'), sessionsDir: process.env.VENDO5_PPP_SESSIONS || '/var/run/vendo5/ppp', runCommand });
+  try { pppoeSystem.sync(); } catch (e) { log('error', 'could not write the PPPoE secrets', { error: e.message }); }
+  setInterval(() => { try { pppoeSystem.sweep(); } catch (e) { log('error', 'PPPoE sweep failed', { error: e.message }); } }, 60000).unref();
   if (!hasUbus) log('warn', 'no ubus on this machine: the network pages use an emulated uci');
   const vouchers = createVouchers({ file: path.join(stateDir, 'vouchers', 'list.json') });
   const tickets = createTickets({ file: path.join(stateDir, 'vouchers', 'tickets.json') });
@@ -141,6 +151,8 @@ try {
   } });
   const money = createMoney({ vouchers, credits, access, clientLog, ratePesosPerMinute: () => pesos_per_minute, sessions: session, firewall, sales, mainlog, save: () => session.save() });
   const events = {
+    ...createFileHandlers({ area: fileArea, mainlog }),
+    ...createPppoeHandlers({ store: pppoeStore, system: pppoeSystem, mainlog }),
     ...createNetworkHandlers({ file: path.join(stateDir, 'network.json'), uci, runCommand, arp, mainlog, leasesFile: process.env.VENDO5_LEASES_FILE || '/tmp/dhcp.leases', crontabFile: process.env.VENDO5_CRONTAB || (hasUbus ? '/etc/crontabs/root' : path.join(stateDir, 'crontab')) }),
     ...createSystemHandlers({ appDir, runCommand, mainlog, restart, enabled: updateEnabled }),
     ...createSettingsHandlers({ settings, mainlog, deviceName, restart, version, lanInterface: config.network.lan_interface }),
@@ -149,6 +161,7 @@ try {
     ...createMoneyHandlers({ vouchers, credits, tickets, sessions: session, mainlog, endSession: money.endSession, save: () => session.save() }),
     ...createMainHandlers({ account, sessions, licence, mainlog, version }),
     ...createNavHandlers({
+      pppoe: { store: pppoeStore, system: pppoeSystem },
       sessions: session,
       firewall,
       arp,

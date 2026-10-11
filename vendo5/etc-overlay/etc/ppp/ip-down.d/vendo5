@@ -1,0 +1,3 @@
+#!/bin/sh
+rm -f "/var/run/vendo5/ppp/$1.json"
+exit 0

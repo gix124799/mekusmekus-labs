@@ -25,7 +25,7 @@ function readBody(req) {
 //   POST /admin?import=sysconfig|wifi-soft  upload a backup / a software update archive (logged in); answers DONE
 // system: { stateDir, version, restart(), mainlog, appDir, runCommand, updateEnabled, tmpDir } (optional: without it
 // these three are not served).
-function createAdminRoutes({ pages, sessions, serveStatic, system }) {
+function createAdminRoutes({ pages, sessions, serveStatic, system, files }) {
   const cookieHeader = (id, seconds) => `${COOKIE}=${id}; HttpOnly; SameSite=Strict; Path=/admin; Max-Age=${seconds}`;
   const html = (res, status, body, extra = {}) => {
     res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', ...extra });
@@ -111,8 +111,22 @@ function createAdminRoutes({ pages, sessions, serveStatic, system }) {
     html(res, 200, pages.renderShell(page), extra);
   }
 
+  // GET /files[/dir]: the file manager's listing, as JSON. The admin cookie is scoped to /admin, so the browser does
+  // not send it here; the listing is only file names of the PPPoE portal's own public pages. Changing anything (upload,
+  // rename, remove) goes through the guarded socket.
+  function listFiles(req, res, url) {
+    const list = files.list(decodeURIComponent(url.pathname).replace(/\/+$/, ''));
+    if (!list) { res.writeHead(404).end(); return; }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(list));
+  }
+
   return function handle(req, res) {
     const url = new URL(req.url, 'http://localhost');
+    if (files && req.method === 'GET' && (url.pathname === '/files' || url.pathname.startsWith('/files/'))) {
+      try { listFiles(req, res, url); } catch { res.writeHead(400).end(); }
+      return true;
+    }
     if (url.pathname === '/admin') {
       if (req.method === 'GET') { get(req, res, url); return true; }
       if (req.method === 'POST') { post(req, res, url); return true; }

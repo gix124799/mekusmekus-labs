@@ -1,4 +1,5 @@
 const { Server } = require('socket.io');
+const ss = require('socket.io-stream');
 
 const COOKIE = 'vendo5_sid';
 
@@ -45,6 +46,22 @@ function attachWire(httpServer, { events, sessions, log = () => {}, cookieName =
 
   io.on('connection', (socket) => {
     for (const [id, def] of Object.entries(events)) {
+      if (def.stream) {
+        // an upload arrives as (stream, data, ack) through socket.io-stream
+        ss(socket).on(id, async (stream, data, cb) => {
+          const ack = typeof cb === 'function' ? cb : () => {};
+          const session = sessions.get(socket.data.sid);
+          if (def.guard && !(session && session.allowed)) { stream.resume(); socket.disconnect(true); return; }
+          try {
+            ack(await def.handler({ stream, data }, { session, socket, ip: ipOf(socket) }));
+          } catch (e) {
+            log('error', `wire handler ${id} failed`, { error: e && e.message });
+            stream.resume();
+            ack(def.fallback);
+          }
+        });
+        continue;
+      }
       socket.on(id, async (...args) => {
         const ack = typeof args[args.length - 1] === 'function' ? args.pop() : () => {};
         const session = sessions.get(socket.data.sid); // resolved per event so an expiry takes effect at once

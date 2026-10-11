@@ -8,7 +8,8 @@
     "dev": "node --watch --watch-path=lib --watch-path=main.js --watch-path=config main.js"
   },
   "dependencies": {
-    "socket.io": "4.7.5"
+    "socket.io": "4.7.5",
+    "socket.io-stream": "0.9.1"
   },
   "devDependencies": {
     "socket.io-client": "4.7.5"
