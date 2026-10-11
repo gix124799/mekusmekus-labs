@@ -3,11 +3,13 @@ const path = require('node:path');
 
 // Pages that work today. Each later sub-project adds its ids here. 'chat' and 'console' are
 // not menu pages: they gate the top-bar chat envelope and the web-terminal icon.
-const DEFAULT_ENABLED = ['dashboard', 'logs'];
+// Every page of the original menu is shown (plus the navbar chat link and the console button). A page whose
+// backend is not built yet loads but has no data; the pages are filled in sub-project by sub-project.
+const DEFAULT_ENABLED = ['dashboard', 'eload-profile', 'eload-product', 'eload-sales', 'eload-logs', 'payment-profile', 'payment-sales', 'payment-logs', 'media', 'chat', 'devices', 'phone-rental', 'phone-rental-sales', 'vouchers', 'credit', 'pppoe-account', 'pppoe-html', 'pppoe-billing', 'reseller', 'themes', 'settings', 'ntp-client', 'scheduler', 'sales', 'vcsales', 'interfaces', 'dhcp', 'utility', 'nft', 'leases', 'wireless', 'logs', 'console'];
 
 // Profile-menu items that need features this product does not have (remote update from a URL,
 // software up/download, data export/import). Hidden until a later sub-project builds them.
-const HIDDEN_PROFILE_ITEMS = ['system-update', 'software-updown', 'export-data', 'import-data'];
+const HIDDEN_PROFILE_ITEMS = []; // every item of the 3-dots menu is shown; Export/Import are a local backup, the updates come from a link or a file you give
 
 const PAGE_LINK = /href="\?page=([\w-]+)"/g;
 const SUBMENU = /[ \t]*<ul class="nav flex-column sub-menu">[\s\S]*?<\/ul>[ \t]*\r?\n?/g;
@@ -100,21 +102,24 @@ const LEAVING_SHIM = `<script>(function () {
 })();</script>`;
 const SHIM_AFTER = '<script type="text/javascript" src="/socket.io.js?version={2}"></script>';
 
-function createPages({ root, version, hostname, enabled = DEFAULT_ENABLED, hiddenProfileItems = HIDDEN_PROFILE_ITEMS }) {
+function createPages({ root, version, hostname, enabled = DEFAULT_ENABLED, hiddenProfileItems = HIDDEN_PROFILE_ITEMS, headScript = '' }) {
   const on = new Set(enabled);
   const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
   const raw = read('nav/index.html');
   if (!raw.includes(SHIM_AFTER)) throw new Error('nav/index.html: the socket.io.js script tag the leaving-shim follows was not found');
-  const shell = trimProfile(trimNavbar(trimMenu(raw.replace(SHIM_AFTER, SHIM_AFTER + LEAVING_SHIM), on), on), hiddenProfileItems);
+  const shell = trimProfile(trimNavbar(trimMenu(raw.replace(SHIM_AFTER, SHIM_AFTER + LEAVING_SHIM + headScript), on), on), hiddenProfileItems);
   const login = stripLoginNames(read('main/index.html'));
+  const ticket = read('nav/ticket.html');
   const host = escapeHtml(String(hostname).toUpperCase());
   const fill = (html) => html.replace(/\{1\}/g, host).replace(/\{2\}/g, escapeHtml(version));
   return {
     isEnabled: (id) => on.has(id),
     renderLogin: () => fill(login),
     // "@script.js" in the shell is a placeholder for the per-page script, as in the original.
+    // The print view of a saved ticket batch: a standalone page (no menu), opened from the Vouchers page.
+    renderTicket: () => fill(ticket.replace('@script.js', 'script/ticket.js')),
     renderShell: (page) => fill(shell.replace('@script.js', `script/${page}.js`)),
   };
 }
 
-module.exports = { createPages, trimMenu, trimNavbar, trimProfile, stripLoginNames, endOfLi, DEFAULT_ENABLED, HIDDEN_PROFILE_ITEMS };
+module.exports = { LEAVING_SHIM, SHIM_AFTER, escapeHtml, createPages, trimMenu, trimNavbar, trimProfile, stripLoginNames, endOfLi, DEFAULT_ENABLED, HIDDEN_PROFILE_ITEMS };

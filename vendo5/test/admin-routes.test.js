@@ -64,7 +64,7 @@ test('logged in: the shell for an enabled page, a redirect for a missing or disa
     const shell = await r.call('GET', '/admin?page=logs', { cookie });
     assert.equal(shell.status, 200);
     assert.ok(shell.body.includes('/nav/script/logs.js?version=1.2.3'));
-    for (const url of ['/admin', '/admin?page=vouchers', '/admin?page=eload-sales', '/admin?page=', '/admin?page=../../etc', '/admin?page=<script>', '/admin?page=dashboard%00']) {
+    for (const url of ['/admin', '/admin?page=nonexistent', '/admin?page=', '/admin?page=../../etc', '/admin?page=<script>', '/admin?page=dashboard%00']) {
       const res = await r.call('GET', url, { cookie });
       assert.equal(res.status, 302, url);
       assert.equal(res.headers.location, '/admin?page=dashboard', url);
@@ -120,5 +120,17 @@ test('static assets are served through the same handler; raw html and other meth
     assert.equal((await r.call('GET', '/nav/index.html')).body, 'FALLTHROUGH');
     assert.equal((await r.call('PUT', '/admin', { body: '{}' })).body, 'FALLTHROUGH');
     assert.equal((await r.call('DELETE', '/admin')).body, 'FALLTHROUGH');
+  } finally { r.stop(); }
+});
+
+test('a logged-in admin gets the ticket print view for ?page=ticket; a visitor gets the login page', async () => {
+  const r = await rig();
+  try {
+    const anon = await r.call('GET', '/admin?page=ticket&file=voucher-1');
+    assert.ok(/login-btn/.test(anon.body));
+    const t = await r.call('GET', '/admin?page=ticket&file=voucher-1', { cookie: loggedIn(r) });
+    assert.equal(t.status, 200);
+    assert.ok(t.body.includes('script/ticket.js'));
+    assert.ok(t.body.includes('barcode.js'));
   } finally { r.stop(); }
 });

@@ -1,0 +1,16 @@
+#!/bin/sh
+# pppd runs this when a PPPoE client connects: $1=ifname $5=local ip... (see pppd(8)); PEERNAME is the username.
+# It records the session for the admin page and applies the account's speed limits (bits per second).
+DIR=/var/run/vendo5/ppp
+LIMITS=/mnt/wifi5/vendo5/ppp/limits
+mkdir -p "$DIR"
+IF="$1"
+MAC="$(echo "$PEERNAME" >/dev/null; ip -o neigh show dev "$IF" 2>/dev/null | sed -n 's/.*lladdr \([0-9a-f:]*\).*/\1/p' | head -n1)"
+printf '{"username":"%s","remoteIP":"%s","mac":"%s","since":%s000}\n' "$PEERNAME" "$IPREMOTE" "$MAC" "$(date +%s)" > "$DIR/$IF.json"
+if [ -f "$LIMITS/$PEERNAME" ]; then
+	read UP DOWN < "$LIMITS/$PEERNAME"
+	[ "$DOWN" -gt 0 ] 2>/dev/null && tc qdisc replace dev "$IF" root tbf rate "${DOWN}bit" burst 32kbit latency 400ms
+	[ "$UP" -gt 0 ] 2>/dev/null && tc qdisc replace dev "$IF" handle ffff: ingress && \
+		tc filter replace dev "$IF" parent ffff: protocol all prio 1 u32 match u32 0 0 police rate "${UP}bit" burst 32k drop flowid :1
+fi
+exit 0

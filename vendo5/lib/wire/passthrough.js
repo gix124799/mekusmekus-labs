@@ -1,8 +1,9 @@
-// @nav-23441: the dashboard asks for read-only device facts as a command line. The original ran any
-// line matching its regex allowlist; here each allowed line maps to a fixed argv and nothing else runs.
+// @nav-23441: the admin pages ask for device facts (and, on the network pages, change settings) by sending a command
+// line. The original ran any line matching its regex allowlist; here each allowed line maps to a fixed argv and
+// nothing else runs. System info and reboot live here; the network commands are in lib/system/netcmd.js.
 const IFACE = /^ubus call network\.interface\.(wan|wan2|wg0) status$/;
 
-function createPassthrough({ runCommand, reboot, systemInfo }) {
+function createPassthrough({ runCommand, reboot, systemInfo, net }) {
   const parse = (out) => {
     try {
       return JSON.parse(out);
@@ -17,17 +18,17 @@ function createPassthrough({ runCommand, reboot, systemInfo }) {
         const out = parse(runCommand(['ubus', 'call', 'system', 'info']));
         return out.uptime === undefined ? systemInfo() : out;
       }
-      const m = IFACE.exec(line);
-      if (m) return parse(runCommand(['ubus', 'call', `network.interface.${m[1]}`, 'status']));
       if (line === 'ubus call system reboot') {
         reboot(); // the page treats stdout === '' as "Restarting"
         return { stdout: '' };
       }
     } catch {
-      // No ubus (not OpenWrt): the interface cards stay absent, but the uptime still has an answer.
+      // No ubus (not OpenWrt): the uptime still has an answer.
       if (line === 'ubus call system info') return systemInfo();
+      return {};
     }
-    return {};
+    const r = net ? net(line) : undefined;
+    return r === undefined ? {} : r;
   };
 }
 

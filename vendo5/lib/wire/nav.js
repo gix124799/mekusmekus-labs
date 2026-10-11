@@ -5,7 +5,7 @@ const macOf = (item) => (typeof item === 'string' ? item : asObj(item).mac);
 
 // Handlers for the admin shell, dashboard and logs pages (@nav-*). Each is (payload, ctx) => reply and
 // every one is guarded: no logged-in session, no answer. Replies copy the shapes the original page reads.
-function createNavHandlers({ sessions, firewall, arp, stats, passthrough, mainlog, notifications, licence, account, reset, now = Date.now, save = () => {} }) {
+function createNavHandlers({ pppoe, sessions, firewall, arp, stats, passthrough, mainlog, notifications, licence, account, reset, now = Date.now, save = () => {} }) {
   const log = (text) => mainlog.write('system', text);
   const guarded = (fallback, handler) => ({ guard: true, fallback, handler });
 
@@ -18,19 +18,39 @@ function createNavHandlers({ sessions, firewall, arp, stats, passthrough, mainlo
     for (const [mac, s] of Object.entries(sessions.all())) {
       const n = neigh[mac.toLowerCase()] || {};
       data[mac] = {
-        type: 'normal',
-        duration: Math.round((s.expiresAt - (s.startedAt || t)) / 1000),
+        type: s.type || 'consumable',
+        duration: s.paused ? Math.round(s.remainingMs / 1000) : s.duration || Math.round((s.expiresAt - (s.startedAt || t)) / 1000),
         logindate: s.startedAt || t,
         expiration: s.expiresAt,
-        uploadLimit: 'Unlimited', // the page parses these as "<n><unit>" strings and tolerates any text
-        downloadLimit: 'Unlimited',
-        max_data_limit: 0,
+        uploadLimit: s.upload || 'Unlimited', // the page parses these as "<n><unit>" strings and tolerates any text
+        downloadLimit: s.download || 'Unlimited',
+        max_data_limit: s.max_data_limit || 0,
         total_upload_data: 0,
         total_download_data: 0,
       };
       session[mac] = { mac, address: n.ip || '', ifname: n.dev || '', brlan: n.dev || '', uptime: Math.max(0, Math.round((t - (s.startedAt || t)) / 1000)), idle: 0, upload: 0, download: 0, rx: 0, tx: 0 };
     }
     return { data, session, sessionList: {} };
+  }
+
+  // A row names its client by MAC, or (Vouchers page) by the code it is running.
+  function resolveMac(x) {
+    const m = macOf(x);
+    if (typeof m === 'string' && !sessions.getSession(m)) {
+      const s = Object.values(sessions.all()).find((v) => v.code === m);
+      if (s) return s.mac;
+    }
+    return m;
+  }
+
+  // PPPoE subscribers and who is online now, in the shape the dashboard draws.
+  function pppoelist() {
+    if (!pppoe) return { accounts: {}, active: {} };
+    const t = now();
+    const accounts = pppoe.store.list();
+    const active = {};
+    for (const a of pppoe.system.active()) active[a.username] = { mac: a.mac, remoteIP: a.remoteIP, uptime: Math.max(0, Math.round((t - a.since) / 1000)), ifname: a.ifname, expired: !(accounts[a.username] && accounts[a.username].expiration > t) };
+    return { accounts, active };
   }
 
   // Removing a session: the firewall may never have heard of it (revoke then throws); the session goes either way.
@@ -47,12 +67,9 @@ function createNavHandlers({ sessions, firewall, arp, stats, passthrough, mainlo
   }
 
   return {
-    '@nav-89554': guarded({}, () => ({ ...stats.snapshot(), Watching: {}, now: now(), active: activeSessions(), pppoelist: { accounts: {}, active: {} } })),
+    '@nav-89554': guarded({}, () => ({ ...stats.snapshot(), Watching: {}, now: now(), active: activeSessions(), pppoelist: pppoelist() })),
 
     '@nav-23441': guarded({}, (payload) => passthrough(payload)),
-
-    // The client-name lookup the dashboard uses for its "name" column; vendo5 keeps no client names.
-    '@nav-77833': guarded({}, () => ({ client: { clientInfo: [] } })),
 
     '@nav-232003': guarded({}, () => {
       const l = licence.licence();
@@ -73,16 +90,17 @@ function createNavHandlers({ sessions, firewall, arp, stats, passthrough, mainlo
     // vendo5 sessions cannot be paused, so there is nothing to disconnect without ending them.
     '@nav-22313': guarded('Error', () => 'Error'),
     '@nav-44232': guarded('Error', (payload) => {
-      const mac = macOf(payload);
+      const mac = resolveMac(payload);
       if (!remove(mac)) return 'Error';
       log(`Admin removed session ${mac}`);
       return 'Success';
     }),
     '@nav-67345': guarded('Error', (payload) => {
-      const list = Array.isArray(payload) ? payload : asObj(payload).info;
+      const info = Array.isArray(payload) ? payload : asObj(payload).info;
+      const list = typeof info === 'string' ? [info] : info; // the Vouchers page removes one running voucher by its code
       if (!Array.isArray(list) || !list.length) return 'Error';
       let n = 0;
-      for (const item of list) if (remove(macOf(item))) n++;
+      for (const item of list) if (remove(resolveMac(item))) n++;
       if (n) log(`Admin removed ${n} session(s)`);
       return n ? 'Success' : 'Error';
     }),

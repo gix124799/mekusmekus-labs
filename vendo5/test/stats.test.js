@@ -62,3 +62,25 @@ test('systemInfo mirrors ubus: uptime and local time in seconds, load scaled by 
   assert.ok(Math.abs(i.localtime - Date.now() / 1000) < 5);
   assert.deepEqual(createStats({ fs: files({}) }).systemInfo().load, []);
 });
+
+test('stand-in interfaces are added only when missing, and their traffic is bursty, not one steady rate', () => {
+  let t = 10000000;
+  let seed = 7;
+  const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const run = () => '[{"ifname":"lo","stats64":{"rx":{"bytes":1},"tx":{"bytes":1}}}]';
+  const s = createStats({ fs: files({}), runCommand: run, standIns: ['eth0', 'eth1'], now: () => t, random });
+  const read = () => JSON.parse(s.snapshot().interfaceInfo).find((x) => x.ifname === 'eth0').stats64;
+  assert.deepEqual(JSON.parse(s.snapshot().interfaceInfo).map((x) => x.ifname), ['lo', 'eth0', 'eth1']);
+  let prev = read().rx.bytes;
+  const deltas = [];
+  for (let i = 0; i < 40; i++) { t += 1000; const b = read().rx.bytes; deltas.push(b - prev); prev = b; }
+  assert.ok(deltas.every((d) => d > 0), 'counters only go up');
+  const min = Math.min(...deltas);
+  const max = Math.max(...deltas);
+  assert.ok(max > min * 2, `the rate varies (min ${min}, max ${max}), so the graph is not a flat line`);
+  assert.ok(read().tx.bytes > 0);
+  const real = () => '[{"ifname":"eth1","stats64":{"rx":{"bytes":5},"tx":{"bytes":5}}}]';
+  const kept = JSON.parse(createStats({ fs: files({}), runCommand: real, standIns: ['eth0', 'eth1'] }).snapshot().interfaceInfo);
+  assert.equal(kept.filter((x) => x.ifname === 'eth1').length, 1, 'a real interface is never duplicated or replaced');
+  assert.equal(createStats({ fs: files({}), runCommand: run }).snapshot().interfaceInfo, run(), 'no stand-ins by default');
+});

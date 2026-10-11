@@ -50,21 +50,63 @@ function clientPage() {
 <div class="state" id="client-credit">Insert coin to continue</div>
 </div>
 <div class="card"><button id="client-insert-coin">INSERT COIN</button></div>
+<div class="card">
+<input id="voucher-code" placeholder="Voucher code" maxlength="32" autocomplete="off" autocapitalize="characters">
+<button id="voucher-redeem">USE VOUCHER</button>
+<button id="client-pause" style="display:none">PAUSE</button>
+</div>
+<div class="card" id="chat-card" style="display:none">
+<div id="chat-log" style="max-height:160px;overflow:auto;text-align:left;font-size:13px"></div>
+<input id="chat-text" placeholder="Message the owner" maxlength="500" autocomplete="off">
+<button id="chat-send">SEND</button>
+</div>
 <div class="tag">They Invent. We Reinvent.</div>
 </div>`, `
 document.getElementById('client-insert-coin').onclick = function () {
   post('/api/pay-intent').then(function () { toastada.info('Insert your coin now.'); });
 };
+document.getElementById('voucher-redeem').onclick = function () {
+  var c = document.getElementById('voucher-code');
+  post('/api/redeem', { code: c.value }).then(function (r) {
+    if (r.ok) { c.value = ''; toastada.success('Voucher accepted.'); } else toastada.error(r.message || 'Error');
+    poll();
+  });
+};
+document.getElementById('client-pause').onclick = function () {
+  var paused = this.dataset.paused === '1';
+  post(paused ? '/api/resume' : '/api/pause').then(function (r) { if (!r.ok) toastada.error(r.message || 'Error'); poll(); });
+};
+function pollChat() {
+  fetch('/api/chat').then(function (r) { return r.json(); }).then(function (d) {
+    var card = document.getElementById('chat-card'); card.style.display = '';
+    var log = document.getElementById('chat-log'); log.textContent = '';
+    Object.keys(d.messages || {}).sort(function (a, b) { return a - b; }).forEach(function (k) {
+      var m = d.messages[k], div = document.createElement('div');
+      div.textContent = (m.sender === 'admin' ? 'Owner: ' : 'You: ') + (m.type === 'text' ? m.message.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'") : '(emoji)');
+      log.appendChild(div);
+    });
+    log.scrollTop = log.scrollHeight;
+  }).catch(function () {});
+}
+document.getElementById('chat-send').onclick = function () {
+  var t = document.getElementById('chat-text');
+  if (t.value) post('/api/chat', { message: t.value }).then(function () { t.value = ''; pollChat(); });
+};
 function poll() {
   fetch('/api/status').then(function (r) { return r.json(); }).then(function (s) {
     var m = Math.floor(s.remainingSeconds / 60), sec = s.remainingSeconds % 60;
-    document.getElementById('title-status').textContent = s.active ? 'Online' : 'Offline';
+    var has = s.active || s.paused;
+    document.getElementById('title-status').textContent = s.paused ? 'Paused' : s.active ? 'Online' : 'Offline';
     document.getElementById('title-status').className = s.active ? 'on' : '';
-    document.getElementById('client-duration').textContent = s.active ? m + 'm ' + sec + 's' : '00:00';
-    document.getElementById('client-credit').textContent = s.active ? 'Connected' : 'Insert coin to continue';
+    document.getElementById('client-duration').textContent = has ? m + 'm ' + sec + 's' : '00:00';
+    document.getElementById('client-credit').textContent = s.paused ? 'Paused, time is saved' : s.active ? 'Connected' : 'Insert coin or enter a voucher';
+    var pb = document.getElementById('client-pause');
+    pb.style.display = s.pausable && has ? '' : 'none';
+    pb.dataset.paused = s.paused ? '1' : '0';
+    pb.textContent = s.paused ? 'RESUME' : 'PAUSE';
   });
 }
-poll(); setInterval(poll, 2000);`);
+poll(); setInterval(poll, 2000); pollChat(); setInterval(pollChat, 5000);`);
 }
 
 function serveThemeFile(urlPath, res) {
@@ -81,7 +123,28 @@ function serveThemeFile(urlPath, res) {
   });
 }
 
-function createServer({ session, arp, ratePesosPerMinute, adminRoutes }) {
+const MAX_BODY = 4096;
+
+// A small JSON body, never more than MAX_BODY bytes; anything else (not JSON, not an object) is {}.
+function readJsonBody(req) {
+  return new Promise((resolve) => {
+    let body = '';
+    req.on('data', (c) => { if (body.length < MAX_BODY) body += c; });
+    req.on('end', () => {
+      let v;
+      try { v = JSON.parse(body || '{}'); } catch { v = {}; }
+      resolve(v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+    });
+    req.on('error', () => resolve({}));
+  });
+}
+
+function reply(res, r) {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(r));
+}
+
+function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, chat, portal }) {
   let pendingPayer = null; // { mac, at }
 
   // Ruling (code-review fix pass): don't clear on a successful consume —
@@ -90,22 +153,22 @@ function createServer({ session, arp, ratePesosPerMinute, adminRoutes }) {
   // an actual TTL lapse with no intervening pulse frees the slot.
   function consumePendingPayer(now = Date.now()) {
     if (!pendingPayer) return null;
-    const { mac, at } = pendingPayer;
-    if (now - at > PAY_INTENT_TTL_MS) {
+    const { mac, at, ttl } = pendingPayer;
+    if (now - at > ttl) {
       pendingPayer = null;
       return null;
     }
-    pendingPayer = { mac, at: now };
+    pendingPayer = { mac, at: now, ttl };
     return mac;
   }
 
   // A different MAC may not steal an already-active pending-payer slot;
   // the same MAC always refreshes its own window.
-  function setPendingPayer(mac, now = Date.now()) {
-    if (pendingPayer && pendingPayer.mac !== mac && now - pendingPayer.at <= PAY_INTENT_TTL_MS) {
+  function setPendingPayer(mac, now = Date.now(), ttl = PAY_INTENT_TTL_MS) {
+    if (pendingPayer && pendingPayer.mac !== mac && now - pendingPayer.at <= pendingPayer.ttl) {
       return false;
     }
-    pendingPayer = { mac, at: now };
+    pendingPayer = { mac, at: now, ttl };
     return true;
   }
 
@@ -128,22 +191,61 @@ function createServer({ session, arp, ratePesosPerMinute, adminRoutes }) {
       return;
     }
 
+    // the customer portal's theme files live in the selected theme's folder
+    if (portal && req.url.startsWith('/client/theme/')) {
+      req.url = req.url.replace('/client/theme/', `/client/${portal.themeDir()}/`);
+      if (portal.serveStatic(req, res)) return;
+    }
+
     // /admin and the admin frontend's static files; before clientMac(), which shells out to `ip neigh`.
     if (adminRoutes && adminRoutes(req, res)) return;
 
     const mac = clientMac(req);
 
     if (req.method === 'POST' && req.url === '/api/pay-intent') {
-      const ok = mac ? setPendingPayer(mac) : false;
+      const ok = mac && !(money && money.blocked(mac)) ? setPendingPayer(mac) : false;
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok }));
       return;
     }
 
+    // Voucher, pause and resume go through the money module; without it these routes do not exist.
+    if (money && req.method === 'POST' && req.url === '/api/redeem') {
+      readJsonBody(req).then((b) => reply(res, money.redeemVoucher(mac, b.code)));
+      return;
+    }
+    if (money && req.method === 'POST' && (req.url === '/api/pause' || req.url === '/api/resume')) {
+      reply(res, req.url === '/api/pause' ? money.pause(mac) : money.resume(mac));
+      return;
+    }
+
+    // The client's side of Chat: read the conversation, send a message.
+    if (chat && mac && req.method === 'GET' && req.url === '/api/chat') {
+      reply(res, { messages: chat.history(mac) });
+      chat.seen(mac);
+      return;
+    }
+    if (chat && req.method === 'POST' && req.url === '/api/chat') {
+      readJsonBody(req).then((b) => reply(res, { ok: !!mac && typeof b.message === 'string' && !!chat.send(mac, b.message) }));
+      return;
+    }
+
     if (req.method === 'GET' && req.url === '/api/status') {
+      const sess = mac ? session.getSession(mac) : null;
+      const paused = !!sess && !!sess.paused;
       const active = !!mac && session.isActive(mac);
+      const remaining = paused ? Math.round(sess.remainingMs / 1000) : active ? remainingSecondsFor(mac) : 0;
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ active, remainingSeconds: active ? remainingSecondsFor(mac) : 0 }));
+      res.end(JSON.stringify({ active, paused, pausable: !!sess && sess.type === 'pausable', pauseLeft: sess && sess.pauselimit, remainingSeconds: remaining }));
+      return;
+    }
+
+    // The original customer portal: its theme's files under /client/theme/, everything else is the page itself
+    // (captive-portal probes land here on any path, so any other GET answers with the page).
+    if (portal && (req.method === 'GET' || req.method === 'HEAD')) {
+      const page = new URL(req.url, 'http://x').searchParams.get('page');
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(portal.render(page));
       return;
     }
 
@@ -151,7 +253,7 @@ function createServer({ session, arp, ratePesosPerMinute, adminRoutes }) {
     res.end(clientPage());
   });
 
-  return { server, consumePendingPayer };
+  return { server, consumePendingPayer, setPendingPayer };
 }
 
 module.exports = { createServer };

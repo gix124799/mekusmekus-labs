@@ -1,0 +1,134 @@
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { createMoneyHandlers } = require('../lib/wire/money');
+const { createVouchers } = require('../lib/store/vouchers');
+const { createTickets } = require('../lib/store/tickets');
+const { createSessionStore } = require('../lib/session');
+
+function rig() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v5wm-'));
+  let t = 1000000;
+  const sessions = createSessionStore(path.join(dir, 's.json'));
+  sessions.load();
+  const vouchers = createVouchers({ file: path.join(dir, 'v.json'), now: () => t });
+  const tickets = createTickets({ file: path.join(dir, 't.json'), now: () => t++ });
+  const lines = [];
+  const saved = [];
+  const h = createMoneyHandlers({ vouchers, tickets, sessions, mainlog: { write: (c, x) => lines.push(`${c}|${x}`) }, now: () => t, save: () => saved.push(1) });
+  const call = (id, p) => h[id].handler(p, {});
+  return { h, call, sessions, vouchers, tickets, lines, saved };
+}
+const FORM = { type: '0', qty: 2, length: 6, random: true, prefix: 'x', upload: '1M', download: '1M', duration: 600, owner: 'Juan', price: 5 };
+
+test('every voucher event is guarded', () => {
+  for (const [id, d] of Object.entries(rig().h)) assert.equal(d.guard, true, id);
+});
+
+test('generate, list, remove', () => {
+  const r = rig();
+  const g = r.call('@nav-96547', FORM);
+  assert.equal(g.message, 'Done');
+  assert.equal(Object.keys(r.call('@nav-55647')).length, 2);
+  assert.match(r.lines[0], /^voucher\|Admin generated 2 voucher/);
+  const [a, b] = g.newvoucher.map((v) => v.code);
+  r.call('@nav-52212', { [a]: true, constructor: true });
+  assert.deepEqual(Object.keys(r.call('@nav-55647')), [b]);
+  r.call('@nav-52212', [b]);
+  assert.deepEqual(r.call('@nav-55647'), {});
+  assert.equal(r.call('@nav-96547', { ...FORM, qty: 0 }).message, 'Invalid quantity');
+  assert.equal(r.call('@nav-96547', null).message, 'Invalid quantity');
+});
+
+test('active vouchers list the sessions that came from a code, in the row shape the page reads', () => {
+  const r = rig();
+  r.sessions.addTime('m1', 600000, { code: 'AAA111', type: 'consumable', upload: '1M', download: '2M' }, 1000000);
+  r.sessions.addTime('m2', 600000, { code: 'BBB222', type: 'pausable', pauselimit: 2, validityHours: 1 }, 1000000);
+  r.sessions.addCredit('m3', 1, 1, 1000000); // a coin session has no voucher
+  const list = r.call('@nav-12215');
+  assert.deepEqual(list.map((e) => e.code), ['AAA111', 'BBB222']);
+  assert.equal(list[0].expiration, 1600000);
+  assert.equal(list[0].duration, undefined);
+  assert.deepEqual([list[0].uploadLimit, list[0].downloadLimit], ['1M', '2M']);
+  assert.equal(list[1].duration, 600);
+  assert.equal(list[1].pauselimit, 2);
+  assert.ok(list[1].validity > 0);
+});
+
+test('edit changes limits and pause count of a running voucher; junk is ignored', () => {
+  const r = rig();
+  r.sessions.addTime('m2', 600000, { code: 'BBB222', type: 'pausable', pauselimit: 2 }, 1000000);
+  r.call('@nav-43456', { code: 'BBB222', uploadLimit: '5M', downloadLimit: 'fast', pauselimit: 9 });
+  const s = r.sessions.getSession('m2');
+  assert.deepEqual([s.upload, s.download, s.pauselimit], ['5M', undefined, 9]);
+  r.call('@nav-43456', { mac: 'm2', uploadLimit: '10M' });
+  assert.equal(s.upload, '10M');
+  for (const bad of [null, 'x', {}, { code: 'NOPE' }, { pauselimit: -1 }]) assert.deepEqual(r.call('@nav-43456', bad), {});
+  assert.equal(s.pauselimit, 9);
+});
+
+test('extend adds time to the selected active vouchers only', () => {
+  const r = rig();
+  r.sessions.addTime('m1', 600000, { code: 'AAA111' }, 1000000);
+  r.sessions.addTime('m2', 600000, { code: 'BBB222' }, 1000000);
+  r.call('@nav-43000', { list: { AAA111: true, ZZZ999: true }, duration: 3600 });
+  assert.equal(r.sessions.getSession('m1').expiresAt, 1000000 + 600000 + 3600000);
+  assert.equal(r.sessions.getSession('m2').expiresAt, 1600000);
+  r.call('@nav-43000', { list: { BBB222: true }, duration: 'x' });
+  assert.equal(r.sessions.getSession('m2').expiresAt, 1600000);
+});
+
+test('ticket templates: save, list, read, delete', () => {
+  const r = rig();
+  const name = r.call('@nav-29903', { name: 'voucher', title: 'Promo', price: 5, data: [['A', 'B']] });
+  assert.match(name, /^voucher-\d+$/);
+  assert.deepEqual(Object.keys(r.call('@nav-55685')), [name]);
+  assert.deepEqual(JSON.parse(r.call('@nav-55699', name)).data, [['A', 'B']]);
+  assert.equal(r.call('@nav-55699', '../x'), '');
+  assert.equal(r.call('@nav-29903', { data: [] }), '');
+  assert.equal(r.call('@nav-23466', '../x'), 'Error');
+  assert.equal(r.call('@nav-23466', name), 'Success');
+  assert.equal(r.call('@nav-23466', name), 'Error');
+});
+
+test('removing a running voucher through the unused-voucher dialog ends its session; the used list reads and clears', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v5wm2-'));
+  const sessions = createSessionStore(path.join(dir, 's.json'));
+  sessions.load();
+  const vouchers = createVouchers({ file: path.join(dir, 'v.json') });
+  const ended = [];
+  const h = createMoneyHandlers({ vouchers, tickets: createTickets({ file: path.join(dir, 't.json') }), sessions, mainlog: { write() {} }, endSession: (m) => { ended.push(m); sessions.revoke(m); } });
+  sessions.addTime('m1', 60000, { code: 'RUN111' }, Date.now());
+  h['@nav-52212'].handler({ RUN111: true }, {});
+  assert.deepEqual(ended, ['m1']);
+  const v = vouchers.generate({ type: '0', qty: 1, length: 6, random: true, prefix: '', upload: '1M', download: '1M', duration: 60, owner: 'Juan', price: 1 }).newvoucher[0];
+  vouchers.markUsed(v, 'm9');
+  const lines = h['@nav-536547'].handler(undefined, {}).split('\n');
+  assert.equal(lines.length, 1);
+  const row = JSON.parse(lines[0]);
+  assert.deepEqual([row.code, row.mac, typeof row.soldDate], [v.code, 'm9', 'number']);
+  assert.equal(h['@nav-536548'].handler(undefined, {}), 'Success');
+  assert.equal(h['@nav-536547'].handler(undefined, {}), '');
+});
+
+test('credit codes: generate answers the codes keyed by code, list/remove/sold work, and bad forms answer {}', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v5cr-'));
+  const { createCredits } = require('../lib/store/credits');
+  const credits = createCredits({ file: path.join(dir, 'c.json'), now: () => 99 });
+  const h = createMoneyHandlers({ vouchers: createVouchers({ file: path.join(dir, 'v.json') }), credits, tickets: createTickets({ file: path.join(dir, 't.json') }), sessions: createSessionStore(path.join(dir, 's.json')), mainlog: { write() {} } });
+  const made = h['@nav-36200'].handler({ quantity: 3, amount: 5, prefix: 'ab', length: 6, name: 'Pedro' }, {});
+  const codes = Object.keys(made);
+  assert.equal(codes.length, 3);
+  for (const c of codes) { assert.match(c, /^AB[A-Z0-9]{6}$/); assert.deepEqual(made[c], { amount: 5, name: 'Pedro', date: 99 }); }
+  assert.deepEqual(Object.keys(h['@nav-36220'].handler(undefined, {})).sort(), codes.sort());
+  h['@nav-35532'].handler([codes[0], 'nope'], {});
+  assert.equal(Object.keys(h['@nav-36220'].handler(undefined, {})).length, 2);
+  for (const bad of [null, {}, { quantity: 501, amount: 5, length: 6, name: 'Pedro' }, { quantity: 1, amount: 0, length: 6, name: 'Pedro' }, { quantity: 1, amount: 5, length: 5, name: 'Pedro' }, { quantity: 1, amount: 5, length: 6, prefix: 'abcdef', name: 'Pedro' }, { quantity: 1, amount: 5, length: 6, name: 'a' }]) assert.deepEqual(h['@nav-36200'].handler(bad, {}), {}, JSON.stringify(bad));
+  credits.markUsed(credits.get(codes[1]), 'm1');
+  assert.deepEqual([JSON.parse(h['@nav-033214'].handler(undefined, {})).code, JSON.parse(h['@nav-033214'].handler(undefined, {})).mac], [codes[1], 'm1']);
+  assert.equal(h['@nav-536549'].handler(undefined, {}), 'Success');
+  assert.equal(h['@nav-033214'].handler(undefined, {}), '');
+  assert.match(h['@nav-29903'].handler({ name: 'credit', data: [['x']] }, {}), /^credit-\d+$/);
+});

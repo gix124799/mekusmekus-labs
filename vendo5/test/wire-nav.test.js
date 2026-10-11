@@ -45,7 +45,7 @@ test('dashboard: stats plus the active sessions in the shapes the page reads', (
   assert.equal(d.expiration, 160000);
   assert.equal(d.logindate, 40000);
   assert.equal(d.duration, 120);
-  assert.equal(d.type, 'normal');
+  assert.equal(d.type, 'consumable');
   assert.equal(typeof d.uploadLimit, 'string', 'the page calls toLowerCase() on the limits');
   assert.equal(typeof d.downloadLimit, 'string');
   assert.deepEqual(r.active.session['aa:bb:cc:dd:ee:01'], { mac: 'aa:bb:cc:dd:ee:01', address: '10.0.0.5', ifname: 'br-lan', brlan: 'br-lan', uptime: 60, idle: 0, upload: 0, download: 0, rx: 0, tx: 0 });
@@ -61,7 +61,6 @@ test('dashboard with no sessions', () => {
 test('passthrough, name lookup, licence, serial, redeem', () => {
   const { nav } = setup();
   assert.deepEqual(call(nav, '@nav-23441', 'ubus call system info'), { ran: 'ubus call system info' });
-  assert.deepEqual(call(nav, '@nav-77833'), { client: { clientInfo: [] } });
   const l = call(nav, '@nav-232003');
   assert.equal(l.status, 'activated');
   assert.equal(l.code, 'SER1');
@@ -139,4 +138,14 @@ test('factory reset ends all sessions, restores the default login, clears notice
   assert.equal(t.state.accountReset, 1);
   assert.equal(t.state.cleared, 1);
   assert.ok(t.lines.some((l) => /reset the device/.test(l)));
+});
+
+test('remove accepts the code a running voucher carries, as one string or in a list', () => {
+  const t = setup();
+  t.sessions.addTime('m1', 60000, { code: 'AAA111' }, 50000);
+  t.sessions.addTime('m2', 60000, { code: 'BBB222' }, 50000);
+  assert.equal(call(t.nav, '@nav-67345', { info: 'AAA111' }), 'Success');
+  assert.equal(t.sessions.getSession('m1'), undefined);
+  assert.equal(call(t.nav, '@nav-44232', { code: 'x', mac: 'BBB222' }), 'Success');
+  assert.equal(t.sessions.getSession('m2'), undefined);
 });

@@ -4,7 +4,7 @@ const path = require('node:path');
 const { createPages, trimMenu, trimNavbar, trimProfile, stripLoginNames, endOfLi } = require('../lib/ui/pages');
 
 const ROOT = require('./helpers/ui-root');
-const pages = () => createPages({ root: ROOT, version: '1.2.3', hostname: 'vendo-one' });
+const pages = () => createPages({ root: ROOT, version: '1.2.3', hostname: 'vendo-one', enabled: ['dashboard', 'logs'] });
 const count = (s, re) => (s.match(re) || []).length;
 const links = (html) => [...html.matchAll(/href="\?page=([\w-]+)"/g)].map((m) => m[1]);
 
@@ -40,8 +40,10 @@ test('shell: the top bar drops the chat envelope and the terminal icon', () => {
   assert.ok(html.includes('id="notificationDropdown"'), 'notifications stay');
 });
 
-test('shell: the profile menu hides update/software/export/import and keeps the rest', () => {
-  const html = pages().renderShell('dashboard');
+test('shell: the profile menu shows every item by default, and can hide chosen ones', () => {
+  const all = pages().renderShell('dashboard');
+  for (const id of ['system-update', 'software-updown', 'export-data', 'import-data', 'clear-all-data', 'license', 'change-pass', 'system-reboot', 'logout']) assert.ok(all.includes(`id="${id}"`), id);
+  const html = createPages({ root: ROOT, version: '1', hostname: 'h', enabled: ['dashboard'], hiddenProfileItems: ['system-update', 'software-updown', 'export-data', 'import-data'] }).renderShell('dashboard');
   for (const id of ['system-update', 'software-updown', 'export-data', 'import-data']) assert.ok(!html.includes(`id="${id}"`), id);
   for (const id of ['clear-all-data', 'license', 'change-pass', 'system-reboot', 'logout']) assert.ok(html.includes(`id="${id}"`), id);
 });

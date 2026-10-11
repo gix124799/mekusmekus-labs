@@ -8,7 +8,7 @@ const { execFileSync } = require('node:child_process');
 
 const APP = '/opt/vendo5';
 const UI_SRC = 'legacy/wifi5-soft/frontend-decrypted/public';
-const UI_DIRS = ['main', 'nav']; // the login page and the admin shell; client/sub/apk/ppoe stay out
+const UI_DIRS = ['main', 'nav', 'sub', 'client']; // the admin login, the admin shell and the reseller portal; client/apk/ppoe stay out
 const UI_ROOT_FILES = /\.(js|ico)$/; // socket.io.js and friends sit next to the page folders
 
 // Every regular file under dir, as paths relative to dir (symlinks are skipped: debugfs would copy the target's name only).
