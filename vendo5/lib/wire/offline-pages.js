@@ -18,7 +18,7 @@ function createOfflinePageHandlers({ file, mainlog }) {
     '@nav-23411': guarded(fail('Error'), (payload) => {
       const p = asObj(payload);
       const c = read().payment;
-      if (p.getConfig || p.getRate) return { apiKey: c.apiKey, rate: c.rate, bypass: c.bypass, rates: [], data: undefined };
+      if (p.getConfig || p.getRate) return { apiKey: c.apiKey, rate: c.rate, bypass: c.bypass, rates: [], set: { type: 0 }, data: undefined };
       if (p.getBalance) return { data: { status: 1 }, balance: 0 };
       if (p.getAPIkey) return fail();
       if (p.createAPI) return fail();
@@ -32,8 +32,8 @@ function createOfflinePageHandlers({ file, mainlog }) {
       if (p.setRate) { if (!(Number(p.rate) >= 0 && Number(p.rate) < 1000)) return 'Error'; change((s) => { s.payment.rate = Number(p.rate); }); return ''; }
       if (p.setBypass) { change((s) => { s.payment.bypass = p.bypass === true; }); return ''; }
       if (p.payoutprice || p.request || p.otp) return fail();
-      if (p.Sales) return {};
-      if (p.getPayoutLogs || p.getPPPoESaleLogs || p.getSaleLogs) return { data: { logs: [], total: 0, count: 0, recordsTotal: 0, recordsFiltered: 0 } };
+      if (p.Sales) return { hotspot: 0, pppoe: 0 };
+      if (p.getPayoutLogs || p.getPPPoESaleLogs || p.getSaleLogs) return { data: [], logs: [], total: 0, count: 0, recordsTotal: 0, recordsFiltered: 0, found_count: 0 };
       if (p.setTransaction) return '';
       return fail('Error');
     }),
@@ -46,7 +46,7 @@ function createOfflinePageHandlers({ file, mainlog }) {
         case 'readLogFile': return '';
         case 'remove_log': case 'remove_all_logs': return '';
         case 'get-users-loggedin': case 'get-users-data': return { info: {} };
-        case 'getClient': return { info: {} };
+        case 'getClient': return { info: { deviceId: '', duration: 0, login: '', logout: '', name: '', phone: '', total_credit: 0, model: '', download: 0, upload: 0, id: '', imageurl: '' } };
         case 'getSales': return {};
         case 'clearSales': case 'removeSales': case 'clear_sales': case 'clear-users-sales': return '';
         case 'save-insertban': {
