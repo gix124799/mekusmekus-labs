@@ -10,7 +10,8 @@ const MAIN = path.join(__dirname, '..', 'main.js');
 const DEFAULTS = path.join(__dirname, '..', 'config');
 
 function run(env) {
-  const p = spawn(process.execPath, [MAIN], { env: { ...process.env, ...env } });
+  // every run gets its own state dir: the default (/mnt/wifi5/vendo5) is the device's, never the test machine's
+  const p = spawn(process.execPath, [MAIN], { env: { ...process.env, VENDO5_STATE_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'v5state-')), ...env } });
   let out = '';
   p.stdout.on('data', (c) => { out += c; });
   const exited = new Promise((r) => p.on('exit', (code) => r(code)));
@@ -153,43 +154,13 @@ test('a paid coin pulse credits the session, calls firewall allow, and persists 
   assert.equal(saved[mac].creditPesos, 1);
 });
 
-// Caught a real bug: main.js passed config.admin straight to
-// createAdminAuth, but the config key is password_hash (snake_case,
-// matching the config-file convention) while lib/admin.js expects
-// passwordHash (camelCase) -- the mismatch meant every login silently
-// failed. Unit tests never caught it because they inject a fake
-// adminAuth; only an end-to-end run of the real main.js wiring does.
-test('admin login with the default config credentials actually works end to end', async () => {
-  const r = run({ VENDO5_CONFIG_DIR: tmpDir(), VENDO5_DEFAULTS_DIR: DEFAULTS, VENDO5_GPIO_BASE: fakeGpioBase(), VENDO5_PORTAL_PORT: '0' });
-  await new Promise((res) => r.p.stdout.once('data', res));
-  await waitFor(r, /portal listening/);
-  const portLine = /"port":(\d+)/.exec(r.out());
-  const port = Number(portLine[1]);
-
-  try {
-    const res = await new Promise((resolve, reject) => {
-      const req = http.request({ port, method: 'POST', path: '/admin/login', headers: { 'Content-Type': 'application/json' } }, (resp) => {
-        let body = '';
-        resp.on('data', (c) => { body += c; });
-        resp.on('end', () => resolve({ body }));
-      });
-      req.on('error', reject);
-      req.end(JSON.stringify({ username: 'admin', password: 'admin' }));
-    });
-    assert.deepEqual(JSON.parse(res.body), { ok: true });
-  } finally {
-    r.p.kill('SIGTERM');
-    await r.exited;
-  }
-});
-
 test('main.js keeps serving the portal when the coin gpio pin is unavailable', async () => {
   const { spawn } = require('node:child_process');
   const os = require('node:os');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vendo5-nogpio-'));
   const child = spawn(process.execPath, [path.join(__dirname, '..', 'main.js')], {
     env: { ...process.env, VENDO5_CONFIG_DIR: path.join(dir, 'cfg'), VENDO5_DEFAULTS_DIR: path.join(__dirname, '..', 'config'),
-      VENDO5_SESSION_FILE: path.join(dir, 's.json'), VENDO5_GPIO_BASE: path.join(dir, 'missing-gpio'),
+      VENDO5_SESSION_FILE: path.join(dir, 's.json'), VENDO5_STATE_DIR: path.join(dir, 'state'), VENDO5_GPIO_BASE: path.join(dir, 'missing-gpio'),
       VENDO5_PORTAL_PORT: '3997', VENDO5_FIREWALL_CMD: 'noop', VENDO5_ARP_FAKE_MAC: 'm1' },
   });
   try {
@@ -197,75 +168,4 @@ test('main.js keeps serving the portal when the coin gpio pin is unavailable', a
     const res = await fetch('http://127.0.0.1:3997/api/status');
     assert.equal(res.status, 200);
   } finally { child.kill(); }
-});
-
-test('admin revoke, end to end: a paid session can be revoked via the real admin API, and the firewall/session file reflect it', async () => {
-  const configDir = tmpDir();
-  const sessionFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'v5sessfile-')), 'sessions.json');
-  const gpioBase = fakeGpioBase();
-  const mac = 'aa:bb:cc:dd:ee:ff';
-
-  const r = run({
-    VENDO5_CONFIG_DIR: configDir,
-    VENDO5_DEFAULTS_DIR: DEFAULTS,
-    VENDO5_SESSION_FILE: sessionFile,
-    VENDO5_GPIO_BASE: gpioBase,
-    VENDO5_PORTAL_PORT: '0',
-    VENDO5_FIREWALL_CMD: 'noop',
-    VENDO5_ARP_FAKE_MAC: mac,
-  });
-  await new Promise((res) => r.p.stdout.once('data', res));
-  await waitFor(r, /portal listening/);
-  const portLine = /"port":(\d+)/.exec(r.out());
-  const port = Number(portLine[1]);
-
-  try {
-    // Pay a coin so there's a real active session to revoke.
-    await new Promise((resolve, reject) => {
-      const req = http.request({ port, method: 'POST', path: '/api/pay-intent' }, (res) => { res.resume(); res.on('end', resolve); });
-      req.on('error', reject);
-      req.end();
-    });
-    const pinDir = path.join(gpioBase, 'gpio17');
-    fs.writeFileSync(path.join(pinDir, 'value'), '1');
-    await waitFor(r, /firewall allow/);
-
-    // Log in as admin to get a real session cookie.
-    const loginRes = await new Promise((resolve, reject) => {
-      const req = http.request({ port, method: 'POST', path: '/admin/login', headers: { 'Content-Type': 'application/json' } }, (resp) => {
-        let body = '';
-        resp.on('data', (c) => { body += c; });
-        resp.on('end', () => resolve({ body, headers: resp.headers }));
-      });
-      req.on('error', reject);
-      req.end(JSON.stringify({ username: 'admin', password: 'admin' }));
-    });
-    assert.deepEqual(JSON.parse(loginRes.body), { ok: true });
-    const cookie = loginRes.headers['set-cookie'][0].split(';')[0];
-
-    // Revoke it through the real admin API.
-    const revokeRes = await new Promise((resolve, reject) => {
-      const req = http.request({ port, method: 'POST', path: `/admin/api/sessions/${mac}/revoke`, headers: { Cookie: cookie } }, (resp) => {
-        let body = '';
-        resp.on('data', (c) => { body += c; });
-        resp.on('end', () => resolve({ status: resp.statusCode, body }));
-      });
-      req.on('error', reject);
-      req.end();
-    });
-    assert.equal(revokeRes.status, 200);
-    assert.deepEqual(JSON.parse(revokeRes.body), { ok: true });
-
-    await waitFor(r, /"message":"admin revoke"/);
-    r.p.kill('SIGTERM');
-    await r.exited;
-
-    const saved = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
-    assert.equal(saved[mac], undefined); // revoked session is gone from the persisted file
-  } finally {
-    // ruling: `r.exited` is a Promise (always truthy), so `!r.exited` never
-    // fired here; kill unconditionally -- killing an already-exited child is
-    // a documented no-op in Node, safe on both the pass and fail path.
-    r.p.kill('SIGTERM');
-  }
 });

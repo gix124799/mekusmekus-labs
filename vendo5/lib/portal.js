@@ -1,7 +1,6 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const { getRecent, log } = require('./logger');
 
 const PAY_INTENT_TTL_MS = 10000;
 const THEME_DIR = path.join(__dirname, '..', 'public', 'theme');
@@ -68,149 +67,6 @@ function poll() {
 poll(); setInterval(poll, 2000);`);
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-}
-
-function loginForm() {
-  return `<div id="admin-login-form" class="card">
-<h2>Admin Login</h2>
-<p id="login-error" class="err" style="display:none;">Invalid username or password.</p>
-<label>Username</label><input id="login-username" type="text" autocomplete="username">
-<label>Password</label><input id="login-password" type="password" autocomplete="current-password">
-<button id="login-submit">LOGIN</button>
-</div>`;
-}
-
-const LOGIN_JS = `
-document.getElementById('login-submit').onclick = function () {
-  post('/admin/login', { username: document.getElementById('login-username').value, password: document.getElementById('login-password').value })
-    .then(function (r) { if (r.ok) location.reload(); else document.getElementById('login-error').style.display = 'block'; });
-};`;
-
-const LOGOUT_JS = `
-document.getElementById('logout-btn').onclick = function () { post('/admin/logout').then(function () { location.reload(); }); };`;
-
-// Real session data (mac, credit, remaining time) from session.all().
-function dashboardContent(sessionsByMac, now = Date.now()) {
-  const list = Object.values(sessionsByMac);
-  const total = list.reduce((n, s) => n + s.creditPesos, 0);
-  const rows = list.map((s) => {
-    const remaining = Math.max(0, Math.round((s.expiresAt - now) / 1000));
-    return `<tr data-mac-row="${escapeHtml(s.mac)}"><td>${escapeHtml(s.mac)}</td><td>${s.creditPesos}</td><td>${remaining}s</td>` +
-      `<td><button data-revoke-mac="${escapeHtml(s.mac)}" class="ghost">Revoke</button> ` +
-      `<input data-credit-input="${escapeHtml(s.mac)}" type="number" min="1" step="1" style="width:4em;"> ` +
-      `<button data-credit-mac="${escapeHtml(s.mac)}" class="ghost">Add credit</button></td></tr>`;
-  }).join('');
-  return `<div class="card">
-<h2>Active Sessions: ${list.length} &middot; Credit: &#8369;${total}</h2>
-<table><thead><tr><th>MAC</th><th>Credit (&#8369;)</th><th>Remaining</th><th></th></tr></thead>
-<tbody id="sessions-tbody">${rows || '<tr><td colspan="4">No active sessions</td></tr>'}</tbody></table>
-</div>
-<div class="card"><h2>Recent Activity</h2><pre id="logs-panel" style="max-height:300px;overflow:auto;"></pre></div>
-<div class="top"><span></span><button id="logout-btn" class="ghost">Logout</button></div>`;
-}
-
-const DASHBOARD_JS = `
-${LOGOUT_JS}
-function renderSessions(s) {
-  var tbody = document.getElementById('sessions-tbody');
-  // final-review fix: a 2s poll used to blow away an in-progress credit
-  // amount the admin was still typing. Capture non-empty values before
-  // replacing innerHTML and restore them for the same mac afterward.
-  var preserved = {};
-  document.querySelectorAll('[data-credit-input]').forEach(function (el) {
-    if (el.value) preserved[el.dataset.creditInput] = el.value;
-  });
-  var macs = Object.keys(s);
-  tbody.innerHTML = macs.length ? macs.map(function (mac) {
-    var row = s[mac];
-    var remaining = Math.max(0, Math.round((row.expiresAt - Date.now()) / 1000));
-    var val = preserved[mac] ? ' value="' + preserved[mac] + '"' : '';
-    return '<tr><td>' + mac + '</td><td>' + row.creditPesos + '</td><td>' + remaining + 's</td>' +
-      '<td><button data-revoke-mac="' + mac + '" class="ghost">Revoke</button> ' +
-      '<input data-credit-input="' + mac + '" type="number" min="1" step="1" style="width:4em;"' + val + '> ' +
-      '<button data-credit-mac="' + mac + '" class="ghost">Add credit</button></td></tr>';
-  }).join('') : '<tr><td colspan="4">No active sessions</td></tr>';
-  wireActionButtons();
-}
-function renderLogs(lines) {
-  document.getElementById('logs-panel').textContent = lines.map(function (l) { return JSON.stringify(l); }).join('\\n');
-}
-function wireActionButtons() {
-  document.querySelectorAll('[data-revoke-mac]').forEach(function (btn) {
-    btn.onclick = function () {
-      post('/admin/api/sessions/' + btn.dataset.revokeMac + '/revoke').then(function (r) {
-        if (!r.ok) toastada.error('Revoke failed, try again.');
-        refresh();
-      });
-    };
-  });
-  document.querySelectorAll('[data-credit-mac]').forEach(function (btn) {
-    btn.onclick = function () {
-      var mac = btn.dataset.creditMac;
-      var input = document.querySelector('[data-credit-input="' + mac + '"]');
-      post('/admin/api/sessions/' + mac + '/credit', { pesos: Number(input.value) }).then(function (r) {
-        if (!r.ok) toastada.error('Add credit failed.');
-        refresh();
-      });
-    };
-  });
-}
-function refresh() {
-  // final-review fix: an empty 401 body used to throw inside r.json(),
-  // silently freezing the dashboard on a logged-out/restarted backend.
-  // Reload to the login form instead of polling forever against a 401.
-  function poll(url, render) {
-    fetch(url).then(function (r) {
-      if (r.status === 401) { location.reload(); return; }
-      return r.json().then(render);
-    }).catch(function () {});
-  }
-  poll('/admin/api/sessions', renderSessions);
-  poll('/admin/api/logs', renderLogs);
-}
-wireActionButtons();
-refresh();
-setInterval(refresh, 2000);`;
-
-function adminPage(content, loggedIn) {
-  return shell('Admin | MekusMekus Vendo', `<div class="wrap wide">
-<img class="banner" src="/theme/banner.jpg" alt="MekusMekus Labs">
-${content}
-</div>`, loggedIn ? DASHBOARD_JS : LOGIN_JS);
-}
-
-const ADMIN_COOKIE = 'vendo5_admin';
-
-function parseCookies(req) {
-  const header = req.headers.cookie || '';
-  const out = {};
-  for (const part of header.split(';')) {
-    const i = part.indexOf('=');
-    if (i === -1) continue;
-    out[part.slice(0, i).trim()] = part.slice(i + 1).trim();
-  }
-  return out;
-}
-
-function readJsonBody(req) {
-  return new Promise((resolve) => {
-    let body = '';
-    req.on('data', (c) => { body += c; });
-    req.on('end', () => {
-      let parsed;
-      try { parsed = JSON.parse(body || '{}'); } catch { parsed = {}; }
-      // final-review fix: a syntactically valid but non-object JSON body
-      // (null, an array, a bare number/string) used to be returned as-is,
-      // and every caller destructures it (`({ username, password })`,
-      // `({ pesos })`), which throws on anything that isn't a plain object
-      // -- an unhandled rejection that crashed the whole process.
-      resolve(parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {});
-    });
-  });
-}
-
 function serveThemeFile(urlPath, res) {
   const rel = urlPath.replace(/^\/theme\//, '');
   const ext = path.extname(rel);
@@ -225,7 +81,7 @@ function serveThemeFile(urlPath, res) {
   });
 }
 
-function createServer({ session, firewall, arp, ratePesosPerMinute, adminAuth }) {
+function createServer({ session, arp, ratePesosPerMinute, adminRoutes }) {
   let pendingPayer = null; // { mac, at }
 
   // Ruling (code-review fix pass): don't clear on a successful consume —
@@ -267,101 +123,15 @@ function createServer({ session, firewall, arp, ratePesosPerMinute, adminAuth })
   }
 
   const server = http.createServer((req, res) => {
-    const mac = clientMac(req);
-
     if (req.method === 'GET' && req.url.startsWith('/theme/')) {
       serveThemeFile(req.url, res);
       return;
     }
 
-    const isAdminSession = () => adminAuth.verify(parseCookies(req)[ADMIN_COOKIE]);
+    // /admin and the admin frontend's static files; before clientMac(), which shells out to `ip neigh`.
+    if (adminRoutes && adminRoutes(req, res)) return;
 
-    if (req.method === 'GET' && (req.url === '/admin' || req.url.startsWith('/admin?'))) {
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end((isAdminSession() ? adminPage(dashboardContent(session.all()), true) : adminPage(loginForm(), false)));
-      return;
-    }
-
-    if (req.method === 'POST' && req.url === '/admin/login') {
-      readJsonBody(req).then(({ username, password }) => {
-        const token = adminAuth.login(username, password);
-        if (token) res.setHeader('Set-Cookie', `${ADMIN_COOKIE}=${token}; HttpOnly; Path=/; SameSite=Strict`);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: !!token }));
-      });
-      return;
-    }
-
-    if (req.method === 'POST' && req.url === '/admin/logout') {
-      adminAuth.logout(parseCookies(req)[ADMIN_COOKIE]);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true }));
-      return;
-    }
-
-    if (req.method === 'GET' && req.url === '/admin/api/sessions') {
-      if (!isAdminSession()) { res.writeHead(401).end(); return; }
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(session.all()));
-      return;
-    }
-
-    if (req.method === 'GET' && req.url === '/admin/api/logs') {
-      if (!isAdminSession()) { res.writeHead(401).end(); return; }
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(getRecent()));
-      return;
-    }
-
-    // final-review fix: hex/colon only (matches the spec's own regex) --
-    // this both removes the need for decodeURIComponent (whose URIError on
-    // malformed input was an uncaught, process-crashing exception) and
-    // makes an Object.prototype member name like "constructor"/"toString"
-    // structurally unable to match, since no such name is purely hex/colon.
-    const revokeMatch = req.url.match(/^\/admin\/api\/sessions\/([0-9a-fA-F:]+)\/revoke$/);
-    if (req.method === 'POST' && revokeMatch) {
-      if (!isAdminSession()) { res.writeHead(401).end(); return; }
-      const targetMac = revokeMatch[1];
-      if (!Object.hasOwn(session.all(), targetMac)) { res.writeHead(404).end(); return; }
-      try {
-        firewall.revoke(targetMac);
-      } catch (e) {
-        log('error', 'admin revoke failed', { action: 'revoke', mac: targetMac, admin: true, error: e.message });
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false }));
-        return;
-      }
-      session.revoke(targetMac);
-      session.save();
-      log('info', 'admin revoke', { action: 'revoke', mac: targetMac, admin: true });
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true }));
-      return;
-    }
-
-    const creditMatch = req.url.match(/^\/admin\/api\/sessions\/([0-9a-fA-F:]+)\/credit$/);
-    if (req.method === 'POST' && creditMatch) {
-      if (!isAdminSession()) { res.writeHead(401).end(); return; }
-      const targetMac = creditMatch[1];
-      if (!Object.hasOwn(session.all(), targetMac)) { res.writeHead(404).end(); return; }
-      readJsonBody(req).then(({ pesos }) => {
-        if (typeof pesos !== 'number' || !Number.isFinite(pesos) || pesos <= 0) {
-          res.writeHead(400).end();
-          return;
-        }
-        session.addCredit(targetMac, pesos, ratePesosPerMinute);
-        try {
-          firewall.allow(targetMac);
-        } catch (e) {
-          log('error', 'admin credit: firewall allow failed', { action: 'credit', mac: targetMac, pesos, admin: true, error: e.message });
-        }
-        session.save();
-        log('info', 'admin credit', { action: 'credit', mac: targetMac, pesos, admin: true });
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true }));
-      });
-      return;
-    }
+    const mac = clientMac(req);
 
     if (req.method === 'POST' && req.url === '/api/pay-intent') {
       const ok = mac ? setPendingPayer(mac) : false;
