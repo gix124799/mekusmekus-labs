@@ -198,3 +198,74 @@ test('main.js keeps serving the portal when the coin gpio pin is unavailable', a
     assert.equal(res.status, 200);
   } finally { child.kill(); }
 });
+
+test('admin revoke, end to end: a paid session can be revoked via the real admin API, and the firewall/session file reflect it', async () => {
+  const configDir = tmpDir();
+  const sessionFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'v5sessfile-')), 'sessions.json');
+  const gpioBase = fakeGpioBase();
+  const mac = 'aa:bb:cc:dd:ee:ff';
+
+  const r = run({
+    VENDO5_CONFIG_DIR: configDir,
+    VENDO5_DEFAULTS_DIR: DEFAULTS,
+    VENDO5_SESSION_FILE: sessionFile,
+    VENDO5_GPIO_BASE: gpioBase,
+    VENDO5_PORTAL_PORT: '0',
+    VENDO5_FIREWALL_CMD: 'noop',
+    VENDO5_ARP_FAKE_MAC: mac,
+  });
+  await new Promise((res) => r.p.stdout.once('data', res));
+  await waitFor(r, /portal listening/);
+  const portLine = /"port":(\d+)/.exec(r.out());
+  const port = Number(portLine[1]);
+
+  try {
+    // Pay a coin so there's a real active session to revoke.
+    await new Promise((resolve, reject) => {
+      const req = http.request({ port, method: 'POST', path: '/api/pay-intent' }, (res) => { res.resume(); res.on('end', resolve); });
+      req.on('error', reject);
+      req.end();
+    });
+    const pinDir = path.join(gpioBase, 'gpio17');
+    fs.writeFileSync(path.join(pinDir, 'value'), '1');
+    await waitFor(r, /firewall allow/);
+
+    // Log in as admin to get a real session cookie.
+    const loginRes = await new Promise((resolve, reject) => {
+      const req = http.request({ port, method: 'POST', path: '/admin/login', headers: { 'Content-Type': 'application/json' } }, (resp) => {
+        let body = '';
+        resp.on('data', (c) => { body += c; });
+        resp.on('end', () => resolve({ body, headers: resp.headers }));
+      });
+      req.on('error', reject);
+      req.end(JSON.stringify({ username: 'admin', password: 'admin' }));
+    });
+    assert.deepEqual(JSON.parse(loginRes.body), { ok: true });
+    const cookie = loginRes.headers['set-cookie'][0].split(';')[0];
+
+    // Revoke it through the real admin API.
+    const revokeRes = await new Promise((resolve, reject) => {
+      const req = http.request({ port, method: 'POST', path: `/admin/api/sessions/${mac}/revoke`, headers: { Cookie: cookie } }, (resp) => {
+        let body = '';
+        resp.on('data', (c) => { body += c; });
+        resp.on('end', () => resolve({ status: resp.statusCode, body }));
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    assert.equal(revokeRes.status, 200);
+    assert.deepEqual(JSON.parse(revokeRes.body), { ok: true });
+
+    await waitFor(r, /"message":"admin revoke"/);
+    r.p.kill('SIGTERM');
+    await r.exited;
+
+    const saved = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
+    assert.equal(saved[mac], undefined); // revoked session is gone from the persisted file
+  } finally {
+    // ruling: `r.exited` is a Promise (always truthy), so `!r.exited` never
+    // fired here; kill unconditionally -- killing an already-exited child is
+    // a documented no-op in Node, safe on both the pass and fail path.
+    r.p.kill('SIGTERM');
+  }
+});

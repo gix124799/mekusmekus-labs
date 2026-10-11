@@ -62,7 +62,7 @@ try {
   log('error', 'firewall sync failed at boot', { error: e.message });
 }
 
-const { server, consumePendingPayer } = createServer({ session, arp, ratePesosPerMinute: pesos_per_minute, adminAuth });
+const { server, consumePendingPayer } = createServer({ session, firewall, arp, ratePesosPerMinute: pesos_per_minute, adminAuth });
 server.listen(portalPort, () => {
   log('info', 'portal listening', { port: server.address().port });
 });
