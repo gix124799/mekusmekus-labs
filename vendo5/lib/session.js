@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 
 function createSessionStore(filePath) {
-  let sessions = {}; // mac -> { mac, creditPesos, expiresAt }
+  let sessions = {}; // mac -> { mac, creditPesos, expiresAt, startedAt }
 
   function load(now = Date.now()) {
     sessions = {};
@@ -45,9 +45,17 @@ function createSessionStore(filePath) {
       existing.creditPesos += pesos;
       existing.expiresAt += minutes * 60000;
     } else {
-      sessions[mac] = { mac, creditPesos: pesos, expiresAt: now + minutes * 60000 };
+      sessions[mac] = { mac, creditPesos: pesos, expiresAt: now + minutes * 60000, startedAt: now };
     }
     return sessions[mac];
+  }
+
+  // Admin "extend": more time, no more credit. Only a live session can be extended.
+  function extend(mac, ms, now = Date.now()) {
+    const sess = sessions[mac];
+    if (!sess || sess.expiresAt <= now || !Number.isFinite(ms) || ms <= 0) return null;
+    sess.expiresAt += ms;
+    return sess;
   }
 
   function expireDue(now = Date.now()) {
@@ -69,7 +77,7 @@ function createSessionStore(filePath) {
     return { ...sessions };
   }
 
-  return { load, save, addCredit, getSession, isActive, expireDue, revoke, all };
+  return { load, save, addCredit, extend, getSession, isActive, expireDue, revoke, all };
 }
 
 module.exports = { createSessionStore };

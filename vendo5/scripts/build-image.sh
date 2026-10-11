@@ -19,9 +19,8 @@ CMD=build/debugfs.cmd
   for l in S200soft S80nginx S250ngrok S90zerotier; do echo "rm /etc/rc.d/$l"; done
   echo "rm /soft/index.o"
   # app tree
-  echo "mkdir /opt"; echo "mkdir /opt/vendo5"; echo "mkdir /mnt/wifi5"
-  for d in lib config public public/theme; do echo "mkdir /opt/vendo5/$d"; done
-  for f in main.js package.json lib/*.js config/*.json public/theme/*; do echo "write $f /opt/vendo5/$f"; done
+  echo "mkdir /mnt/wifi5"
+  node scripts/image-commands.js   # app, config, theme, admin frontend (main+nav) and socket.io, with their directories
   # OpenWrt system config + service
   for f in network dhcp firewall; do echo "rm /etc/config/$f"; echo "write etc-overlay/etc/config/$f /etc/config/$f"; done
   echo "write etc-overlay/etc/vendo5-firewall.nft /etc/vendo5-firewall.nft"

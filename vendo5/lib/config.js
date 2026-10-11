@@ -5,7 +5,6 @@ const REQUIRED = {
   network: ['lan_interface'],
   vendo: ['coin_pin', 'pulse_value_pesos', 'pesos_per_minute'],
   licensing: ['mode'],
-  admin: ['username', 'password_hash'],
 };
 
 let loaded = null;
