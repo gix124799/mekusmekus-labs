@@ -27,6 +27,9 @@ const { timeForPesos, profileFor } = require('./lib/money/rates');
 const { createUci } = require('./lib/system/uci');
 const { createNetworkHandlers } = require('./lib/wire/network');
 const { createPppoeHandlers } = require('./lib/wire/pppoe');
+const { createResellers } = require('./lib/store/resellers');
+const { createResellerAdminHandlers, createResellerPortalHandlers } = require('./lib/wire/resellers');
+const { createResellerRoutes } = require('./lib/ui/reseller-routes');
 const { createFileHandlers } = require('./lib/wire/files');
 const { createFileArea } = require('./lib/system/files');
 const { createPppoe } = require('./lib/store/pppoe');
@@ -121,7 +124,7 @@ try {
   // Installing software replaces this very directory, so it is only allowed on the device (under its supervisor).
   const updateEnabled = process.env.VENDO5_SUPERVISED === '1';
   const fileArea = createFileArea({ root: path.join(stateDir, 'pppoe-html') });
-  const routes = createAdminRoutes({ pages, sessions, files: fileArea, serveStatic: createStatic({ root: uiDir }), system: { stateDir, version, restart, mainlog, appDir, runCommand, updateEnabled } });
+  const adminRoutes = createAdminRoutes({ pages, sessions, files: fileArea, serveStatic: createStatic({ root: uiDir }), system: { stateDir, version, restart, mainlog, appDir, runCommand, updateEnabled } });
   // OpenWrt has ubus; a development machine does not, and then the same pages run against an emulated uci.
   const hasUbus = process.env.VENDO5_FIREWALL_CMD !== 'noop' && ['/bin/ubus', '/sbin/ubus', '/usr/bin/ubus', '/usr/sbin/ubus'].some((f) => require('node:fs').existsSync(f));
   const stats = createStats({ runCommand, standIns: hasUbus ? [] : ['eth0', 'eth1'] });
@@ -174,13 +177,22 @@ try {
       save: () => session.save(),
     }),
   };
-  admin = { routes, events, sessions, mainlog, money, sales, access, clientLog, settings };
+  const resellers = createResellers({ file: path.join(stateDir, 'resellers.json') });
+  const resellerSessions = createSessions({});
+  const resellerRoutes = createResellerRoutes({ root: uiDir, version, hostname: deviceName, sessions: resellerSessions, resellers });
+  const resellerEvents = createResellerPortalHandlers({ sessions: resellerSessions, resellers, vouchers, credits, tickets, sales, licence, mainlog, version });
+  events['@nav-00112347'] = createResellerAdminHandlers({ resellers, mainlog })['@nav-00112347'];
+  const routes = (req, res) => resellerRoutes(req, res) || adminRoutes(req, res);
+  admin = { routes, events, sessions, resellerEvents, resellerSessions, mainlog, money, sales, access, clientLog, settings };
 } catch (e) {
   log('error', 'admin page unavailable; the portal runs without it', { error: e.message });
 }
 
 const { server, consumePendingPayer } = createServer({ session, arp, ratePesosPerMinute: pesos_per_minute, adminRoutes: admin && admin.routes, money: admin && admin.money });
-if (admin) attachWire(server, { events: admin.events, sessions: admin.sessions, log });
+if (admin) {
+  attachWire(server, { events: admin.events, sessions: admin.sessions, log });
+  attachWire(server, { events: admin.resellerEvents, sessions: admin.resellerSessions, log, cookieName: 'vendo5_rsid', path: '/reseller', landing: '/reseller' });
+}
 
 server.listen(portalPort, () => {
   log('info', 'portal listening', { port: server.address().port });

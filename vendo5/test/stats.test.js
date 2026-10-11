@@ -63,15 +63,24 @@ test('systemInfo mirrors ubus: uptime and local time in seconds, load scaled by 
   assert.deepEqual(createStats({ fs: files({}) }).systemInfo().load, []);
 });
 
-test('stand-in interfaces are added only when missing, with counters that grow, so graphs move on a laptop', () => {
+test('stand-in interfaces are added only when missing; with no real traffic their counters grow with time', () => {
   let t = 10000;
-  const run = () => '[{"ifname":"lo","stats64":{"rx":{"bytes":1},"tx":{"bytes":1}}},{"ifname":"eth1","stats64":{"rx":{"bytes":5},"tx":{"bytes":5}}}]';
+  const run = () => '[{"ifname":"lo","stats64":{"rx":{"bytes":1},"tx":{"bytes":1}}}]';
   const s = createStats({ fs: files({}), runCommand: run, standIns: ['eth0', 'eth1'], now: () => t });
   const a = JSON.parse(s.snapshot().interfaceInfo);
-  assert.deepEqual(a.map((x) => x.ifname), ['lo', 'eth1', 'eth0']);
-  assert.equal(a.find((x) => x.ifname === 'eth1').stats64.rx.bytes, 5, 'a real interface is never replaced');
+  assert.deepEqual(a.map((x) => x.ifname), ['lo', 'eth0', 'eth1']);
   const first = a.find((x) => x.ifname === 'eth0').stats64.rx.bytes;
   t += 5000;
   assert.ok(JSON.parse(s.snapshot().interfaceInfo).find((x) => x.ifname === 'eth0').stats64.rx.bytes > first);
+  const real = () => '[{"ifname":"eth1","stats64":{"rx":{"bytes":5},"tx":{"bytes":5}}}]';
+  const kept = JSON.parse(createStats({ fs: files({}), runCommand: real, standIns: ['eth0', 'eth1'] }).snapshot().interfaceInfo);
+  assert.equal(kept.filter((x) => x.ifname === 'eth1').length, 1, 'a real interface is never duplicated or replaced');
   assert.equal(createStats({ fs: files({}), runCommand: run }).snapshot().interfaceInfo, run(), 'no stand-ins by default');
+});
+
+test('the first stand-in mirrors the busiest real interface so its graph moves; the second counts up', () => {
+  const run = () => '[{"ifname":"lo","stats64":{"rx":{"bytes":999999},"tx":{"bytes":9}}},{"ifname":"wlp2","stats64":{"rx":{"bytes":500},"tx":{"bytes":70}}},{"ifname":"enp1","stats64":{"rx":{"bytes":900},"tx":{"bytes":80}}}]';
+  const list = JSON.parse(createStats({ fs: files({}), runCommand: run, standIns: ['eth0', 'eth1'], now: () => 5000 }).snapshot().interfaceInfo);
+  assert.deepEqual(list.find((l) => l.ifname === 'eth0').stats64, { rx: { bytes: 900 }, tx: { bytes: 80 } });
+  assert.equal(list.find((l) => l.ifname === 'eth1').stats64.rx.bytes, 5 * 1500);
 });

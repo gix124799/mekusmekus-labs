@@ -122,4 +122,4 @@ function createPages({ root, version, hostname, enabled = DEFAULT_ENABLED, hidde
   };
 }
 
-module.exports = { createPages, trimMenu, trimNavbar, trimProfile, stripLoginNames, endOfLi, DEFAULT_ENABLED, HIDDEN_PROFILE_ITEMS };
+module.exports = { LEAVING_SHIM, SHIM_AFTER, escapeHtml, createPages, trimMenu, trimNavbar, trimProfile, stripLoginNames, endOfLi, DEFAULT_ENABLED, HIDDEN_PROFILE_ITEMS };

@@ -87,7 +87,13 @@ def main():
         open(f'{work}/gpio/{f}', 'w').close()
     open(f'{work}/gpio/gpio17/value', 'w').write('0')
     json.dump(seed, open(f'{work}/sessions.json', 'w'))
-    os.makedirs(f'{work}/state')
+    full = {a: {'read': True, 'write': True} for a in ('vouchers', 'credits', 'cvused', 'sales', 'ticket')}
+    os.makedirs(f'{work}/state', exist_ok=True)
+    json.dump({'juan': {'username': 'juan', 'password': 'secret99', 'limit': {'voucher': {'l': 10, 'u': 0}, 'credit': {'l': 0, 'u': 0}}, 'permission': full,
+                        'vouchertype': {'pausable': False, 'consumable': True},
+                        'voucherset': {'hour': {'profile': 'hour', 'type': 'consumable', 'length': 6, 'random': True, 'prefix': 'RS', 'upload': '2M', 'download': '5M', 'duration': 3600, 'price': 5, 'notsametype': 0}},
+                        'creditset': {}}}, open(f'{work}/state/resellers.json', 'w'))
+    os.makedirs(f'{work}/state', exist_ok=True)
     json.dump({str(now): {'title': 'Welcome', 'icon': 'mdi-information-outline', 'message': 'First notice', 'read': False}},
               open(f'{work}/state/notification.json', 'w'))
     env = dict(os.environ, VENDO5_CONFIG_DIR=f'{work}/cfg', VENDO5_DEFAULTS_DIR=f'{ROOT}/config', VENDO5_SESSION_FILE=f'{work}/sessions.json',
@@ -236,6 +242,38 @@ def main():
             check(f'unknown page {page} falls back to the dashboard', until(lambda: 'page=dashboard' in d.current_url))
 
         check('the server logged no error during the whole run', '"level":"error"' not in open(logf).read(), open(logf).read()[-400:])
+
+        print('\n== RESELLER ==')
+        d.get(URL + '/admin?page=reseller'); arm(d); time.sleep(2.5)
+        check('the admin Reseller page lists the account', 'juan' in body(), body()[:200])
+        check('the Reseller admin page raised no JavaScript error', errs(d) == [], str(errs(d))[:200])
+        shot(d, 'reseller-admin')
+        # the reseller is a different person in a different browser: a fresh one, so nothing carries over
+        o2 = Options()
+        o2.add_argument('-headless')
+        rd = webdriver.Firefox(options=o2, service=Service(os.environ.get('GECKODRIVER', '/snap/bin/geckodriver')))
+        rd.set_window_size(1280, 900)
+        try:
+            rbody = lambda: rd.execute_script('return document.body.textContent').lower()
+            rd.get(URL + '/reseller'); arm(rd)
+            check('the reseller login page loads', until(lambda: rd.find_element(By.ID, 'login-btn').is_displayed()))
+            rd.find_element(By.ID, 'username').send_keys('juan'); rd.find_element(By.ID, 'password').send_keys('wrong'); rd.find_element(By.ID, 'login-btn').click()
+            time.sleep(1.5)
+            check('a wrong reseller password stays on the login page', 'page=' not in rd.current_url, rd.current_url)
+            rd.find_element(By.ID, 'password').clear(); rd.find_element(By.ID, 'password').send_keys('secret99'); rd.find_element(By.ID, 'login-btn').click()
+            check('the reseller lands on their Vouchers page', until(lambda: 'page=vouchers' in rd.current_url), rd.current_url)
+            arm(rd); time.sleep(2)
+            check('the reseller sees their own name', until(lambda: 'juan' in rbody()))
+            check('the reseller portal raised no JavaScript error', errs(rd) == [], str(errs(rd))[:200])
+            shot(rd, 'reseller-portal')
+            gen = until(lambda: next((b for b in rd.find_elements(By.TAG_NAME, 'button') if b.text.strip() == 'Generate' and b.is_displayed()), None))
+            check('the Generate button is there', bool(gen))
+            rd.find_element(By.CSS_SELECTOR, 'a.nav-link[href="?page=sales"]').click()
+            check('the reseller Sales page opens', until(lambda: 'page=sales' in rd.current_url))
+            rd.execute_script("document.getElementById('logout').click()")
+            check('reseller logout returns to its login', until(lambda: rd.find_elements(By.ID, 'login-btn')))
+        finally:
+            rd.quit()
 
         print('\n== LOGOUT ==')
         out = until(lambda: next((e for e in d.find_elements(By.ID, 'logout') if e.is_displayed()), None))

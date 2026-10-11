@@ -74,10 +74,14 @@ function createStats({ fs = nodeFs, runCommand = () => '', statfs = nodeFs.statf
     try { list = JSON.parse(text); } catch { list = []; }
     if (!Array.isArray(list)) list = [];
     const t = Math.floor(now() / 1000);
-    for (const n of standIns) {
-      if (list.some((l) => l.ifname === n)) continue;
-      list.push({ ifname: n, link_type: 'ether', operstate: 'UP', stats64: { rx: { bytes: t * 1500, packets: t }, tx: { bytes: t * 700, packets: t } } });
-    }
+    // the first stand-in mirrors the busiest real interface, so its traffic graph moves like a real WAN's; the
+    // others (and a machine with no traffic at all) count up steadily
+    const busiest = list.filter((l) => l.ifname !== 'lo' && l.stats64 && l.stats64.rx).sort((a, b) => b.stats64.rx.bytes - a.stats64.rx.bytes)[0];
+    standIns.forEach((n, i) => {
+      if (list.some((l) => l.ifname === n)) return;
+      const stats64 = i === 0 && busiest ? JSON.parse(JSON.stringify(busiest.stats64)) : { rx: { bytes: t * 1500, packets: t }, tx: { bytes: t * 700, packets: t } };
+      list.push({ ifname: n, link_type: 'ether', operstate: 'UP', stats64 });
+    });
     return JSON.stringify(list);
   }
 
