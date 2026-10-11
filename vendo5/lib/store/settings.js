@@ -15,6 +15,7 @@ function defaults({ deviceName, coinPin }) {
     pausable: { autopause: false, autolimit: false },
     trial: { default: { enable: false } },
     redirect: '', footer: '', idkey: '',
+    portalTheme: { enable: true, script: '', set: '' },
     gameports: {},
     points: { spinwheel: { price: [], controller: [], display: [], token: 0 }, redeem: {}, vendo: [], voucher: [], credit: [] },
   };

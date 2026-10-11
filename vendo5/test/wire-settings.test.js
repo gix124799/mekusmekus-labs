@@ -169,3 +169,25 @@ test('a settings file from an older version (missing keys) still gives a complet
   assert.equal(a.vendoInfo.sub.main.countdownMax, 15);
   assert.deepEqual(a.vendoInfo.sub.main.config.rate, []);
 });
+
+test('themes: licence note, the two shipped themes, set/unset, and the portal script with its enable switch', () => {
+  const r = rig();
+  assert.deepEqual(r.call('@nav-32024512', { action: 'ctheme' }), { allowed: true });
+  const l = r.call('@nav-32024512', { action: 'GetList' });
+  assert.deepEqual(Object.keys(l.list.themes), ['defualt-theme', 'newTheme']);
+  assert.equal(l.allowed.newTheme.activate, 'activated');
+  assert.equal(l.set, '');
+  assert.equal(r.call('@nav-32024512', { action: 'set', name: 'newTheme' }), 'Success');
+  assert.equal(r.call('@nav-32024512', { action: 'GetList' }).set, 'newTheme');
+  assert.equal(r.call('@nav-32024512', { action: 'set', name: '../x' }), 'Unknown theme');
+  assert.equal(r.call('@nav-32024512', { action: 'unset', name: 'newTheme' }), 'Success');
+  assert.equal(r.call('@nav-453648', { action: 'GET2-ENABLE' }), true);
+  r.call('@nav-453648', { action: 'SET2-ENABLE', enable: false });
+  assert.equal(r.call('@nav-453648', { action: 'GET2-ENABLE' }), false);
+  assert.deepEqual(r.call('@nav-453648', { action: 'SET2', theme: 'console.log(1)', password: 'pw' }), { success: 'Success' });
+  assert.equal(r.call('@nav-453648', { action: 'GET2' }), 'console.log(1)');
+  assert.deepEqual(r.call('@nav-453648', { action: 'SET2', theme: 'x' }), { err: 'Invalid password' });
+  assert.deepEqual(r.call('@nav-453648', { action: 'SET2', theme: 'x'.repeat(20001), password: 'pw' }), { err: 'The script is too long' });
+  assert.deepEqual(r.call('@nav-453648', { action: 'SET2' }), { success: 'Theme disabled' });
+  assert.equal(r.call('@nav-453648', { action: 'GET2' }), '');
+});

@@ -158,6 +158,18 @@ function createSettingsHandlers({ settings, mainlog, restart = () => {}, deviceN
 
     '@nav-453648': guarded('', (payload) => {
       const p = asObj(payload);
+      // Themes page: the portal's own script (shown to clients), switched on/off
+      if (p.action === 'GET2-ENABLE') return settings.read().portalTheme.enable;
+      if (p.action === 'SET2-ENABLE') { settings.change((s) => { s.portalTheme.enable = !!p.enable; }); return ''; }
+      if (p.action === 'GET2') return settings.read().portalTheme.script;
+      if (p.action === 'SET2') {
+        if (p.theme === undefined || p.theme === '') { settings.change((s) => { s.portalTheme.script = ''; }); return { success: 'Theme disabled' }; }
+        if (typeof p.theme !== 'string' || p.theme.length > 20000) return { err: 'The script is too long' };
+        if (typeof p.password !== 'string' || !p.password) return { err: 'Invalid password' };
+        settings.change((s) => { s.portalTheme.script = p.theme; });
+        log('Admin saved the portal theme script');
+        return { success: 'Success' };
+      }
       if (p.action === 'GET') return settings.read().footer;
       // the portal footer is shown as HTML; the original refused anything that can load or run code
       if (p.action === 'SET' && typeof p.footer === 'string' && p.footer.length <= 500 && !/<\s*(script|link|img|iframe|object|embed)|src\s*=|on\w+\s*=|javascript:/i.test(p.footer)) {
@@ -165,6 +177,26 @@ function createSettingsHandlers({ settings, mainlog, restart = () => {}, deviceN
         return '';
       }
       return 'Error';
+    }),
+
+    // Portal themes: the two shipped themes, always allowed (no vendor licence offline), one can be set.
+    '@nav-32024512': guarded({}, (payload) => {
+      const p = asObj(payload);
+      const THEMES = ['defualt-theme', 'newTheme'];
+      const FAR = 8640000000000000;
+      if (p.action === 'ctheme') return { allowed: true };
+      if (p.action === 'GetList') {
+        const allowed = Object.fromEntries(THEMES.map((n) => [n, { activate: 'activated', expiration: FAR }]));
+        return { list: { themes: Object.fromEntries(THEMES.map((n) => [n, { url: '/theme/' }])) }, allowed, set: settings.read().portalTheme.set };
+      }
+      if (p.action === 'set') {
+        if (!THEMES.includes(p.name)) return 'Unknown theme';
+        settings.change((s) => { s.portalTheme.set = p.name; });
+        log(`Admin set the portal theme ${p.name}`);
+        return 'Success';
+      }
+      if (p.action === 'unset') { settings.change((s) => { s.portalTheme.set = ''; }); return 'Success'; }
+      return {};
     }),
 
     '@nav-33254589': guarded({}, (payload) => {

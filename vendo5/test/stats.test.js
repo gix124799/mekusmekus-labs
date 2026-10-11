@@ -63,24 +63,24 @@ test('systemInfo mirrors ubus: uptime and local time in seconds, load scaled by 
   assert.deepEqual(createStats({ fs: files({}) }).systemInfo().load, []);
 });
 
-test('stand-in interfaces are added only when missing; with no real traffic their counters grow with time', () => {
-  let t = 10000;
+test('stand-in interfaces are added only when missing, and their traffic is bursty, not one steady rate', () => {
+  let t = 10000000;
+  let seed = 7;
+  const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
   const run = () => '[{"ifname":"lo","stats64":{"rx":{"bytes":1},"tx":{"bytes":1}}}]';
-  const s = createStats({ fs: files({}), runCommand: run, standIns: ['eth0', 'eth1'], now: () => t });
-  const a = JSON.parse(s.snapshot().interfaceInfo);
-  assert.deepEqual(a.map((x) => x.ifname), ['lo', 'eth0', 'eth1']);
-  const first = a.find((x) => x.ifname === 'eth0').stats64.rx.bytes;
-  t += 5000;
-  assert.ok(JSON.parse(s.snapshot().interfaceInfo).find((x) => x.ifname === 'eth0').stats64.rx.bytes > first);
+  const s = createStats({ fs: files({}), runCommand: run, standIns: ['eth0', 'eth1'], now: () => t, random });
+  const read = () => JSON.parse(s.snapshot().interfaceInfo).find((x) => x.ifname === 'eth0').stats64;
+  assert.deepEqual(JSON.parse(s.snapshot().interfaceInfo).map((x) => x.ifname), ['lo', 'eth0', 'eth1']);
+  let prev = read().rx.bytes;
+  const deltas = [];
+  for (let i = 0; i < 40; i++) { t += 1000; const b = read().rx.bytes; deltas.push(b - prev); prev = b; }
+  assert.ok(deltas.every((d) => d > 0), 'counters only go up');
+  const min = Math.min(...deltas);
+  const max = Math.max(...deltas);
+  assert.ok(max > min * 2, `the rate varies (min ${min}, max ${max}), so the graph is not a flat line`);
+  assert.ok(read().tx.bytes > 0);
   const real = () => '[{"ifname":"eth1","stats64":{"rx":{"bytes":5},"tx":{"bytes":5}}}]';
   const kept = JSON.parse(createStats({ fs: files({}), runCommand: real, standIns: ['eth0', 'eth1'] }).snapshot().interfaceInfo);
   assert.equal(kept.filter((x) => x.ifname === 'eth1').length, 1, 'a real interface is never duplicated or replaced');
   assert.equal(createStats({ fs: files({}), runCommand: run }).snapshot().interfaceInfo, run(), 'no stand-ins by default');
-});
-
-test('the first stand-in mirrors the busiest real interface so its graph moves; the second counts up', () => {
-  const run = () => '[{"ifname":"lo","stats64":{"rx":{"bytes":999999},"tx":{"bytes":9}}},{"ifname":"wlp2","stats64":{"rx":{"bytes":500},"tx":{"bytes":70}}},{"ifname":"enp1","stats64":{"rx":{"bytes":900},"tx":{"bytes":80}}}]';
-  const list = JSON.parse(createStats({ fs: files({}), runCommand: run, standIns: ['eth0', 'eth1'], now: () => 5000 }).snapshot().interfaceInfo);
-  assert.deepEqual(list.find((l) => l.ifname === 'eth0').stats64, { rx: { bytes: 900 }, tx: { bytes: 80 } });
-  assert.equal(list.find((l) => l.ifname === 'eth1').stats64.rx.bytes, 5 * 1500);
 });

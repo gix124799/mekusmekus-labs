@@ -32,6 +32,8 @@ const { createResellerAdminHandlers, createResellerPortalHandlers } = require('.
 const { createResellerRoutes } = require('./lib/ui/reseller-routes');
 const { createFileHandlers } = require('./lib/wire/files');
 const { createFileArea } = require('./lib/system/files');
+const { createMediaHandlers } = require('./lib/wire/media');
+const { createMedia, partitionsFromLsblk } = require('./lib/store/media');
 const { createPppoe } = require('./lib/store/pppoe');
 const { createPppoeSystem } = require('./lib/system/pppoe');
 const { createNetCommands } = require('./lib/system/netcmd');
@@ -153,7 +155,14 @@ try {
     if (hit) clients.addPoints(r.mac, hit.point);
   } });
   const money = createMoney({ vouchers, credits, access, clientLog, ratePesosPerMinute: () => pesos_per_minute, sessions: session, firewall, sales, mainlog, save: () => session.save() });
+  // Media: the disks lsblk shows mounted under /mnt on the device; on a development machine, one folder stands in.
+  const mediaDir = path.join(stateDir, 'media-disk');
+  const partitions = hasUbus
+    ? () => { try { return partitionsFromLsblk(runCommand(['lsblk', '-J', '-b', '-o', 'NAME,LABEL,MOUNTPOINT,SIZE,VENDOR,MODEL'])); } catch { return []; } }
+    : () => { require('node:fs').mkdirSync(mediaDir, { recursive: true }); return [{ name: 'sda1', mountpoint: mediaDir, fssize: 8 * 1024 ** 3, label: 'MEDIA', info: { vendor: 'Development', model: 'Folder' } }]; };
+  const media = createMedia({ partitions, stateFile: path.join(stateDir, 'media.json') });
   const events = {
+    ...createMediaHandlers({ media, mainlog }),
     ...createFileHandlers({ area: fileArea, mainlog }),
     ...createPppoeHandlers({ store: pppoeStore, system: pppoeSystem, mainlog }),
     ...createNetworkHandlers({ file: path.join(stateDir, 'network.json'), uci, runCommand, arp, mainlog, leasesFile: process.env.VENDO5_LEASES_FILE || '/tmp/dhcp.leases', crontabFile: process.env.VENDO5_CRONTAB || (hasUbus ? '/etc/crontabs/root' : path.join(stateDir, 'crontab')) }),
