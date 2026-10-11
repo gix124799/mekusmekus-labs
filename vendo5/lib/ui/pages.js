@@ -3,7 +3,7 @@ const path = require('node:path');
 
 // Pages that work today. Each later sub-project adds its ids here. 'chat' and 'console' are
 // not menu pages: they gate the top-bar chat envelope and the web-terminal icon.
-const DEFAULT_ENABLED = ['dashboard', 'logs', 'vouchers'];
+const DEFAULT_ENABLED = ['dashboard', 'logs', 'vouchers', 'credit', 'sales', 'vcsales'];
 
 // Profile-menu items that need features this product does not have (remote update from a URL,
 // software up/download, data export/import). Hidden until a later sub-project builds them.

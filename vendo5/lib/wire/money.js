@@ -3,7 +3,7 @@ const SPEED = /^\d+(K|M|G|T)$/;
 
 // Handlers for the Vouchers page and its ticket templates (@nav-*). Same conventions as nav.js: every one is
 // guarded, takes (payload, ctx) and answers the shape the original page reads.
-function createMoneyHandlers({ vouchers, tickets, sessions, mainlog, endSession, now = Date.now, save = () => {} }) {
+function createMoneyHandlers({ vouchers, credits, tickets, sessions, mainlog, endSession, now = Date.now, save = () => {} }) {
   const log = (t) => mainlog.write('voucher', t);
   const guarded = (fallback, handler) => ({ guard: true, fallback, handler });
   const byCode = (code) => Object.values(sessions.all()).find((s) => s.code === code);
@@ -82,6 +82,26 @@ function createMoneyHandlers({ vouchers, tickets, sessions, mainlog, endSession,
       }
       if (n) { save(); log(`Admin extended ${n} voucher session(s) by ${Number(p.duration)}s`); }
       return {};
+    }),
+
+    // Credit codes (the Credit page): the list is keyed by code, generate answers the new codes keyed by code.
+    '@nav-36220': guarded({}, () => credits.list()),
+    '@nav-36200': guarded({}, (payload) => {
+      const r = credits.generate(payload);
+      if (r.error) return {};
+      log(`Admin generated ${Object.keys(r.codes).length} credit code(s) of ${Object.values(r.codes)[0].amount} peso(s)`);
+      return r.codes;
+    }),
+    '@nav-35532': guarded({}, (payload) => {
+      const n = credits.remove(Array.isArray(payload) ? payload.map(String) : []);
+      if (n) log(`Admin removed ${n} credit code(s)`);
+      return {};
+    }),
+    '@nav-033214': guarded('', () => credits.usedText()),
+    '@nav-536549': guarded('Error', () => {
+      credits.clearUsed();
+      log('Admin cleared the sold credit list');
+      return 'Success';
     }),
 
     // Ticket templates (the print and Excel export of a generated batch).

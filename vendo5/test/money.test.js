@@ -110,3 +110,18 @@ test('pause revokes the firewall entry and freezes time; resume allows it again;
   assert.equal(bad.money.pause('m1').ok, false);
   assert.equal(bad.sessions.getSession('m1').paused, undefined, 'a failed revoke leaves the session running');
 });
+
+test('a credit code adds pesos of time at the rate, once, records the sale and the used list', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v5mc-'));
+  const { createCredits } = require('../lib/store/credits');
+  const r = rig();
+  const credits = createCredits({ file: path.join(dir, 'c.json'), now: () => r.now() });
+  const money = createMoney({ vouchers: r.vouchers, credits, ratePesosPerMinute: () => 2, sessions: r.sessions, firewall: { allow: () => {}, revoke: () => {} }, sales: r.sales, mainlog: { write() {} }, now: () => r.now() });
+  const [code] = Object.keys(credits.generate({ quantity: 1, amount: 10, length: 6, name: 'Pedro' }).codes);
+  assert.deepEqual(money.redeemVoucher('m1', code), { ok: true, message: 'Success' });
+  assert.equal(r.sessions.getSession('m1').expiresAt, r.now() + 5 * 60000, '10 pesos at 2 pesos a minute');
+  assert.equal(r.sessions.getSession('m1').creditPesos, 10);
+  assert.deepEqual(r.sales.all().map((s) => [s.kind, s.amount, s.code, s.owner]), [['credit', 10, code, 'Pedro']]);
+  assert.equal(JSON.parse(credits.usedText()).mac, 'm1');
+  assert.equal(money.redeemVoucher('m2', code).message, 'Invalid voucher');
+});

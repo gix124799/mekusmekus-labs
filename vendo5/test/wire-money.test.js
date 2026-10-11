@@ -112,3 +112,23 @@ test('removing a running voucher through the unused-voucher dialog ends its sess
   assert.equal(h['@nav-536548'].handler(undefined, {}), 'Success');
   assert.equal(h['@nav-536547'].handler(undefined, {}), '');
 });
+
+test('credit codes: generate answers the codes keyed by code, list/remove/sold work, and bad forms answer {}', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v5cr-'));
+  const { createCredits } = require('../lib/store/credits');
+  const credits = createCredits({ file: path.join(dir, 'c.json'), now: () => 99 });
+  const h = createMoneyHandlers({ vouchers: createVouchers({ file: path.join(dir, 'v.json') }), credits, tickets: createTickets({ file: path.join(dir, 't.json') }), sessions: createSessionStore(path.join(dir, 's.json')), mainlog: { write() {} } });
+  const made = h['@nav-36200'].handler({ quantity: 3, amount: 5, prefix: 'ab', length: 6, name: 'Pedro' }, {});
+  const codes = Object.keys(made);
+  assert.equal(codes.length, 3);
+  for (const c of codes) { assert.match(c, /^AB[A-Z0-9]{6}$/); assert.deepEqual(made[c], { amount: 5, name: 'Pedro', date: 99 }); }
+  assert.deepEqual(Object.keys(h['@nav-36220'].handler(undefined, {})).sort(), codes.sort());
+  h['@nav-35532'].handler([codes[0], 'nope'], {});
+  assert.equal(Object.keys(h['@nav-36220'].handler(undefined, {})).length, 2);
+  for (const bad of [null, {}, { quantity: 501, amount: 5, length: 6, name: 'Pedro' }, { quantity: 1, amount: 0, length: 6, name: 'Pedro' }, { quantity: 1, amount: 5, length: 5, name: 'Pedro' }, { quantity: 1, amount: 5, length: 6, prefix: 'abcdef', name: 'Pedro' }, { quantity: 1, amount: 5, length: 6, name: 'a' }]) assert.deepEqual(h['@nav-36200'].handler(bad, {}), {}, JSON.stringify(bad));
+  credits.markUsed(credits.get(codes[1]), 'm1');
+  assert.deepEqual([JSON.parse(h['@nav-033214'].handler(undefined, {})).code, JSON.parse(h['@nav-033214'].handler(undefined, {})).mac], [codes[1], 'm1']);
+  assert.equal(h['@nav-536549'].handler(undefined, {}), 'Success');
+  assert.equal(h['@nav-033214'].handler(undefined, {}), '');
+  assert.match(h['@nav-29903'].handler({ name: 'credit', data: [['x']] }, {}), /^credit-\d+$/);
+});

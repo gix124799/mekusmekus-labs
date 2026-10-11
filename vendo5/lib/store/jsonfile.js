@@ -23,4 +23,23 @@ function jsonFile(file, fallback) {
   };
 }
 
-module.exports = { jsonFile };
+// An append-style log of JSON objects, one per line, newest last, capped at `max` lines (oldest first out).
+function lineLog(file, max) {
+  const lines = () => {
+    try {
+      return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
+    } catch {
+      return [];
+    }
+  };
+  return {
+    append(obj) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, [...lines(), JSON.stringify(obj)].slice(-max).join('\n') + '\n');
+    },
+    text: () => lines().join('\n'),
+    clear: () => fs.rmSync(file, { force: true }),
+  };
+}
+
+module.exports = { jsonFile, lineLog };

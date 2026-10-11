@@ -18,8 +18,10 @@ const { createSessions } = require('./lib/wire/session');
 const { createMainHandlers } = require('./lib/wire/main');
 const { createNavHandlers } = require('./lib/wire/nav');
 const { createMoneyHandlers } = require('./lib/wire/money');
+const { createSalesHandlers } = require('./lib/wire/sales');
 const { createVouchers } = require('./lib/store/vouchers');
 const { createTickets } = require('./lib/store/tickets');
+const { createCredits } = require('./lib/store/credits');
 const { createSales } = require('./lib/store/sales');
 const { createMoney } = require('./lib/money/redeem');
 const { createPassthrough } = require('./lib/wire/passthrough');
@@ -32,6 +34,7 @@ const sessionFile = process.env.VENDO5_SESSION_FILE || '/mnt/wifi5/vendo5-sessio
 const gpioBase = process.env.VENDO5_GPIO_BASE || '/sys/class/gpio';
 const uiDir = process.env.VENDO5_UI_DIR || '/opt/vendo5/ui';
 const stateDir = process.env.VENDO5_STATE_DIR || '/mnt/wifi5/vendo5';
+const deviceName = process.env.VENDO5_DEVICE_NAME || 'ETHYLNET';
 const portalPort = Number(process.env.VENDO5_PORTAL_PORT || 3000);
 
 let config;
@@ -87,17 +90,19 @@ try {
   const licence = createLicence({ stateDir });
   const mainlog = createMainLog({ dir: path.join(stateDir, 'mainlogs') });
   const sessions = createSessions({});
-  const pages = createPages({ root: uiDir, version, hostname: process.env.VENDO5_DEVICE_NAME || 'ETHYLNET',
+  const pages = createPages({ root: uiDir, version, hostname: deviceName,
     // development only: scripts/probe.py injects a recorder that logs every reply property the page reads
     headScript: process.env.VENDO5_PROBE_JS ? `<script>${require('node:fs').readFileSync(process.env.VENDO5_PROBE_JS, 'utf8')}</script>` : '' });
   const routes = createAdminRoutes({ pages, sessions, serveStatic: createStatic({ root: uiDir }) });
   const stats = createStats({ runCommand });
   const vouchers = createVouchers({ file: path.join(stateDir, 'vouchers', 'list.json') });
   const tickets = createTickets({ file: path.join(stateDir, 'vouchers', 'tickets.json') });
+  const credits = createCredits({ file: path.join(stateDir, 'credits', 'list.json') });
   const sales = createSales({ file: path.join(stateDir, 'sales.json') });
-  const money = createMoney({ vouchers, sessions: session, firewall, sales, mainlog, save: () => session.save() });
+  const money = createMoney({ vouchers, credits, ratePesosPerMinute: () => pesos_per_minute, sessions: session, firewall, sales, mainlog, save: () => session.save() });
   const events = {
-    ...createMoneyHandlers({ vouchers, tickets, sessions: session, mainlog, endSession: money.endSession, save: () => session.save() }),
+    ...createSalesHandlers({ sales, deviceName, mainlog }),
+    ...createMoneyHandlers({ vouchers, credits, tickets, sessions: session, mainlog, endSession: money.endSession, save: () => session.save() }),
     ...createMainHandlers({ account, sessions, licence, mainlog, version }),
     ...createNavHandlers({
       sessions: session,
@@ -112,7 +117,7 @@ try {
       save: () => session.save(),
     }),
   };
-  admin = { routes, events, sessions, mainlog, money };
+  admin = { routes, events, sessions, mainlog, money, sales };
 } catch (e) {
   log('error', 'admin page unavailable; the portal runs without it', { error: e.message });
 }
@@ -136,7 +141,10 @@ try {
       return;
     }
     session.addCredit(mac, pulse_value_pesos, pesos_per_minute);
-    if (admin) admin.mainlog.write('system', `Coin: ${pulse_value_pesos} peso(s) credited to ${mac}`);
+    if (admin) {
+      admin.mainlog.write('system', `Coin: ${pulse_value_pesos} peso(s) credited to ${mac}`);
+      try { admin.sales.add({ kind: 'coin', amount: pulse_value_pesos, mac }); } catch (e) { log('error', 'sales record failed', { error: e.message }); }
+    }
     try {
       firewall.allow(mac);
       log('info', 'firewall allow', { mac });

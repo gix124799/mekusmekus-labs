@@ -4,7 +4,7 @@ const LOCK_MS = 5 * 60000;
 // The one place a voucher, pause or resume turns into a session change, a firewall call, a sales
 // record and a log line. A firewall failure undoes the session change; a voucher is only consumed
 // once the client really has its time. (spec M4, M6)
-function createMoney({ vouchers, sessions, firewall, sales, mainlog, save = () => {}, now = Date.now }) {
+function createMoney({ vouchers, credits, ratePesosPerMinute = () => 1, sessions, firewall, sales, mainlog, save = () => {}, now = Date.now }) {
   const wrong = new Map(); // mac -> { count, until }
   const log = (t) => mainlog && mainlog.write('voucher', t);
 
@@ -23,7 +23,9 @@ function createMoney({ vouchers, sessions, firewall, sales, mainlog, save = () =
     if (!mac) return { ok: false, message: 'Device not recognised' };
     if (locked(mac)) return { ok: false, message: 'Too many wrong codes, try again in a few minutes' };
     const code = String(rawCode || '').trim().toUpperCase();
-    const v = /^[A-Z0-9]{3,32}$/.test(code) ? vouchers.get(code) : null;
+    const wellFormed = /^[A-Z0-9]{3,32}$/.test(code);
+    const v = wellFormed ? vouchers.get(code) : null;
+    if (!v && wellFormed && credits && credits.get(code)) return redeemCredit(mac, credits.get(code));
     if (!v) {
       miss(mac);
       log(`Invalid voucher ${code.slice(0, 32)} from ${mac}`);
@@ -56,6 +58,35 @@ function createMoney({ vouchers, sessions, firewall, sales, mainlog, save = () =
     try { sales.add({ kind: 'voucher', amount: v.price, mac, code: v.code, owner: v.genfrom }); } catch (e) { log(`Sales record failed: ${e.message}`); }
     save();
     log(`Voucher ${v.code} used by ${mac}: ${v.duration}s`);
+    wrong.delete(mac);
+    return { ok: true, message: 'Success' };
+  }
+
+  // A credit code: pesos of time at the current rate, like coins, plus a sales record and the used list.
+  function redeemCredit(mac, c) {
+    const t = now();
+    const before = sessions.getSession(mac) ? structuredClone(sessions.getSession(mac)) : null;
+    const wasPaused = before && before.paused;
+    sessions.addCredit(mac, c.amount, ratePesosPerMinute(), t);
+    if (!wasPaused) {
+      try {
+        firewall.allow(mac);
+      } catch (e) {
+        sessions.restore(mac, before);
+        log(`Firewall refused ${mac}: ${e.message}`);
+        return { ok: false, message: 'Could not connect you, try again' };
+      }
+    }
+    try {
+      credits.remove([c.code]);
+    } catch (e) {
+      sessions.restore(mac, before);
+      return { ok: false, message: 'Could not use the code, try again' };
+    }
+    try { credits.markUsed(c, mac); } catch (e) { log(`Used-credit record failed: ${e.message}`); }
+    try { sales.add({ kind: 'credit', amount: c.amount, mac, code: c.code, owner: c.name }); } catch (e) { log(`Sales record failed: ${e.message}`); }
+    save();
+    log(`Credit code ${c.code} used by ${mac}: ${c.amount} peso(s)`);
     wrong.delete(mac);
     return { ok: true, message: 'Success' };
   }

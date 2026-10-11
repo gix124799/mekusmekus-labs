@@ -1,7 +1,5 @@
 const crypto = require('node:crypto');
-const fs = require('node:fs');
-const path = require('node:path');
-const { jsonFile } = require('./jsonfile');
+const { jsonFile, lineLog } = require('./jsonfile');
 
 // No 0/1/I/L/O: a code read off a printed ticket must not be ambiguous. 31 symbols.
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -71,27 +69,13 @@ function createVouchers({ file, usedFile = file.replace(/\.json$/, '') + '.used'
     return { message: 'Done', newvoucher: made, now: now() };
   }
 
-  // Used vouchers, one JSON object per line (what the page's Used Voucher table parses); capped, oldest first out.
-  function usedLines() {
-    try {
-      return fs.readFileSync(usedFile, 'utf8').split('\n').filter(Boolean);
-    } catch {
-      return [];
-    }
-  }
+  const used = lineLog(usedFile, MAX_USED); // what the page's Used Voucher table parses
 
   return {
     generate,
-    markUsed(v, mac) {
-      const lines = usedLines();
-      lines.push(JSON.stringify({ ...v, mac, soldDate: now() }));
-      fs.mkdirSync(path.dirname(usedFile), { recursive: true });
-      fs.writeFileSync(usedFile, lines.slice(-MAX_USED).join('\n') + '\n');
-    },
-    usedText: () => usedLines().join('\n'),
-    clearUsed() {
-      fs.rmSync(usedFile, { force: true });
-    },
+    markUsed: (v, mac) => used.append({ ...v, mac, soldDate: now() }),
+    usedText: used.text,
+    clearUsed: used.clear,
     list: () => store.read(),
     get: (code) => {
       const all = store.read();
