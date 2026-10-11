@@ -3,7 +3,7 @@ const path = require('node:path');
 
 // Pages that work today. Each later sub-project adds its ids here. 'chat' and 'console' are
 // not menu pages: they gate the top-bar chat envelope and the web-terminal icon.
-const DEFAULT_ENABLED = ['dashboard', 'logs'];
+const DEFAULT_ENABLED = ['dashboard', 'logs', 'vouchers'];
 
 // Profile-menu items that need features this product does not have (remote update from a URL,
 // software up/download, data export/import). Hidden until a later sub-project builds them.
@@ -107,12 +107,15 @@ function createPages({ root, version, hostname, enabled = DEFAULT_ENABLED, hidde
   if (!raw.includes(SHIM_AFTER)) throw new Error('nav/index.html: the socket.io.js script tag the leaving-shim follows was not found');
   const shell = trimProfile(trimNavbar(trimMenu(raw.replace(SHIM_AFTER, SHIM_AFTER + LEAVING_SHIM), on), on), hiddenProfileItems);
   const login = stripLoginNames(read('main/index.html'));
+  const ticket = read('nav/ticket.html');
   const host = escapeHtml(String(hostname).toUpperCase());
   const fill = (html) => html.replace(/\{1\}/g, host).replace(/\{2\}/g, escapeHtml(version));
   return {
     isEnabled: (id) => on.has(id),
     renderLogin: () => fill(login),
     // "@script.js" in the shell is a placeholder for the per-page script, as in the original.
+    // The print view of a saved ticket batch: a standalone page (no menu), opened from the Vouchers page.
+    renderTicket: () => fill(ticket.replace('@script.js', 'script/ticket.js')),
     renderShell: (page) => fill(shell.replace('@script.js', `script/${page}.js`)),
   };
 }

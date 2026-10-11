@@ -17,6 +17,11 @@ const { createStats } = require('./lib/system/stats');
 const { createSessions } = require('./lib/wire/session');
 const { createMainHandlers } = require('./lib/wire/main');
 const { createNavHandlers } = require('./lib/wire/nav');
+const { createMoneyHandlers } = require('./lib/wire/money');
+const { createVouchers } = require('./lib/store/vouchers');
+const { createTickets } = require('./lib/store/tickets');
+const { createSales } = require('./lib/store/sales');
+const { createMoney } = require('./lib/money/redeem');
 const { createPassthrough } = require('./lib/wire/passthrough');
 const { attachWire } = require('./lib/wire/server');
 const { version } = require('./package.json');
@@ -67,7 +72,8 @@ const arp = process.env.VENDO5_ARP_FAKE_MAC
   : createArp(runCommand);
 
 try {
-  firewall.syncFromSessions(session.all());
+  // a paused session is deliberately not let through
+  firewall.syncFromSessions(Object.fromEntries(Object.entries(session.all()).filter(([, v]) => !v.paused)));
 } catch (e) {
   log('error', 'firewall sync failed at boot', { error: e.message });
 }
@@ -84,7 +90,12 @@ try {
   const pages = createPages({ root: uiDir, version, hostname: process.env.VENDO5_DEVICE_NAME || 'ETHYLNET' });
   const routes = createAdminRoutes({ pages, sessions, serveStatic: createStatic({ root: uiDir }) });
   const stats = createStats({ runCommand });
+  const vouchers = createVouchers({ file: path.join(stateDir, 'vouchers', 'list.json') });
+  const tickets = createTickets({ file: path.join(stateDir, 'vouchers', 'tickets.json') });
+  const sales = createSales({ file: path.join(stateDir, 'sales.json') });
+  const money = createMoney({ vouchers, sessions: session, firewall, sales, mainlog, save: () => session.save() });
   const events = {
+    ...createMoneyHandlers({ vouchers, tickets, sessions: session, mainlog, save: () => session.save() }),
     ...createMainHandlers({ account, sessions, licence, mainlog, version }),
     ...createNavHandlers({
       sessions: session,
@@ -99,12 +110,12 @@ try {
       save: () => session.save(),
     }),
   };
-  admin = { routes, events, sessions, mainlog };
+  admin = { routes, events, sessions, mainlog, money };
 } catch (e) {
   log('error', 'admin page unavailable; the portal runs without it', { error: e.message });
 }
 
-const { server, consumePendingPayer } = createServer({ session, arp, ratePesosPerMinute: pesos_per_minute, adminRoutes: admin && admin.routes });
+const { server, consumePendingPayer } = createServer({ session, arp, ratePesosPerMinute: pesos_per_minute, adminRoutes: admin && admin.routes, money: admin && admin.money });
 if (admin) attachWire(server, { events: admin.events, sessions: admin.sessions, log });
 
 server.listen(portalPort, () => {

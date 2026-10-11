@@ -49,6 +49,10 @@ function createAdminRoutes({ pages, sessions, serveStatic }) {
       return;
     }
     const page = url.searchParams.get('page');
+    if (page === 'ticket') {
+      html(res, 200, pages.renderTicket(), extra);
+      return;
+    }
     if (!page || !pages.isEnabled(page)) {
       redirect(res, '/admin?page=dashboard', extra);
       return;

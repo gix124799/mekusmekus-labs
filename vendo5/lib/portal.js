@@ -50,18 +50,39 @@ function clientPage() {
 <div class="state" id="client-credit">Insert coin to continue</div>
 </div>
 <div class="card"><button id="client-insert-coin">INSERT COIN</button></div>
+<div class="card">
+<input id="voucher-code" placeholder="Voucher code" maxlength="32" autocomplete="off" autocapitalize="characters">
+<button id="voucher-redeem">USE VOUCHER</button>
+<button id="client-pause" style="display:none">PAUSE</button>
+</div>
 <div class="tag">They Invent. We Reinvent.</div>
 </div>`, `
 document.getElementById('client-insert-coin').onclick = function () {
   post('/api/pay-intent').then(function () { toastada.info('Insert your coin now.'); });
 };
+document.getElementById('voucher-redeem').onclick = function () {
+  var c = document.getElementById('voucher-code');
+  post('/api/redeem', { code: c.value }).then(function (r) {
+    if (r.ok) { c.value = ''; toastada.success('Voucher accepted.'); } else toastada.error(r.message || 'Error');
+    poll();
+  });
+};
+document.getElementById('client-pause').onclick = function () {
+  var paused = this.dataset.paused === '1';
+  post(paused ? '/api/resume' : '/api/pause').then(function (r) { if (!r.ok) toastada.error(r.message || 'Error'); poll(); });
+};
 function poll() {
   fetch('/api/status').then(function (r) { return r.json(); }).then(function (s) {
     var m = Math.floor(s.remainingSeconds / 60), sec = s.remainingSeconds % 60;
-    document.getElementById('title-status').textContent = s.active ? 'Online' : 'Offline';
+    var has = s.active || s.paused;
+    document.getElementById('title-status').textContent = s.paused ? 'Paused' : s.active ? 'Online' : 'Offline';
     document.getElementById('title-status').className = s.active ? 'on' : '';
-    document.getElementById('client-duration').textContent = s.active ? m + 'm ' + sec + 's' : '00:00';
-    document.getElementById('client-credit').textContent = s.active ? 'Connected' : 'Insert coin to continue';
+    document.getElementById('client-duration').textContent = has ? m + 'm ' + sec + 's' : '00:00';
+    document.getElementById('client-credit').textContent = s.paused ? 'Paused, time is saved' : s.active ? 'Connected' : 'Insert coin or enter a voucher';
+    var pb = document.getElementById('client-pause');
+    pb.style.display = s.pausable && has ? '' : 'none';
+    pb.dataset.paused = s.paused ? '1' : '0';
+    pb.textContent = s.paused ? 'RESUME' : 'PAUSE';
   });
 }
 poll(); setInterval(poll, 2000);`);
@@ -81,7 +102,28 @@ function serveThemeFile(urlPath, res) {
   });
 }
 
-function createServer({ session, arp, ratePesosPerMinute, adminRoutes }) {
+const MAX_BODY = 4096;
+
+// A small JSON body, never more than MAX_BODY bytes; anything else (not JSON, not an object) is {}.
+function readJsonBody(req) {
+  return new Promise((resolve) => {
+    let body = '';
+    req.on('data', (c) => { if (body.length < MAX_BODY) body += c; });
+    req.on('end', () => {
+      let v;
+      try { v = JSON.parse(body || '{}'); } catch { v = {}; }
+      resolve(v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+    });
+    req.on('error', () => resolve({}));
+  });
+}
+
+function reply(res, r) {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(r));
+}
+
+function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money }) {
   let pendingPayer = null; // { mac, at }
 
   // Ruling (code-review fix pass): don't clear on a successful consume —
@@ -140,10 +182,23 @@ function createServer({ session, arp, ratePesosPerMinute, adminRoutes }) {
       return;
     }
 
+    // Voucher, pause and resume go through the money module; without it these routes do not exist.
+    if (money && req.method === 'POST' && req.url === '/api/redeem') {
+      readJsonBody(req).then((b) => reply(res, money.redeemVoucher(mac, b.code)));
+      return;
+    }
+    if (money && req.method === 'POST' && (req.url === '/api/pause' || req.url === '/api/resume')) {
+      reply(res, req.url === '/api/pause' ? money.pause(mac) : money.resume(mac));
+      return;
+    }
+
     if (req.method === 'GET' && req.url === '/api/status') {
+      const sess = mac ? session.getSession(mac) : null;
+      const paused = !!sess && !!sess.paused;
       const active = !!mac && session.isActive(mac);
+      const remaining = paused ? Math.round(sess.remainingMs / 1000) : active ? remainingSecondsFor(mac) : 0;
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ active, remainingSeconds: active ? remainingSecondsFor(mac) : 0 }));
+      res.end(JSON.stringify({ active, paused, pausable: !!sess && sess.type === 'pausable', pauseLeft: sess && sess.pauselimit, remainingSeconds: remaining }));
       return;
     }
 

@@ -18,13 +18,13 @@ function createNavHandlers({ sessions, firewall, arp, stats, passthrough, mainlo
     for (const [mac, s] of Object.entries(sessions.all())) {
       const n = neigh[mac.toLowerCase()] || {};
       data[mac] = {
-        type: 'normal',
-        duration: Math.round((s.expiresAt - (s.startedAt || t)) / 1000),
+        type: s.type || 'consumable',
+        duration: s.paused ? Math.round(s.remainingMs / 1000) : s.duration || Math.round((s.expiresAt - (s.startedAt || t)) / 1000),
         logindate: s.startedAt || t,
         expiration: s.expiresAt,
-        uploadLimit: 'Unlimited', // the page parses these as "<n><unit>" strings and tolerates any text
-        downloadLimit: 'Unlimited',
-        max_data_limit: 0,
+        uploadLimit: s.upload || 'Unlimited', // the page parses these as "<n><unit>" strings and tolerates any text
+        downloadLimit: s.download || 'Unlimited',
+        max_data_limit: s.max_data_limit || 0,
         total_upload_data: 0,
         total_download_data: 0,
       };

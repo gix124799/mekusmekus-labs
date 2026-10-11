@@ -4,7 +4,7 @@ const path = require('node:path');
 const { createPages, trimMenu, trimNavbar, trimProfile, stripLoginNames, endOfLi } = require('../lib/ui/pages');
 
 const ROOT = require('./helpers/ui-root');
-const pages = () => createPages({ root: ROOT, version: '1.2.3', hostname: 'vendo-one' });
+const pages = () => createPages({ root: ROOT, version: '1.2.3', hostname: 'vendo-one', enabled: ['dashboard', 'logs'] });
 const count = (s, re) => (s.match(re) || []).length;
 const links = (html) => [...html.matchAll(/href="\?page=([\w-]+)"/g)].map((m) => m[1]);
 

@@ -110,7 +110,7 @@ def main():
 
         print('\n== DASHBOARD ==')
         arm(d)
-        check('menu shows only Dashboard and Logs', until(lambda: sorted(set(a.get_attribute('href').split('page=')[1] for a in d.find_elements(By.CSS_SELECTOR, '#sidebar a[href*="page="], .sidebar a[href*="page="]'))) == ['dashboard', 'logs']),
+        check('menu shows only the finished pages', until(lambda: sorted(set(a.get_attribute('href').split('page=')[1] for a in d.find_elements(By.CSS_SELECTOR, '#sidebar a[href*="page="], .sidebar a[href*="page="]'))) == ['dashboard', 'logs', 'vouchers']),
               str([a.get_attribute('href') for a in d.find_elements(By.CSS_SELECTOR, 'a[href*="page="]')]))
         body = lambda: d.execute_script('return document.body.textContent').lower()  # textContent: rows scroll inside a clipped box
         check('the first seeded session is listed', until(lambda: M1 in body()), body()[:300])

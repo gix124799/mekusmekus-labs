@@ -45,7 +45,7 @@ test('dashboard: stats plus the active sessions in the shapes the page reads', (
   assert.equal(d.expiration, 160000);
   assert.equal(d.logindate, 40000);
   assert.equal(d.duration, 120);
-  assert.equal(d.type, 'normal');
+  assert.equal(d.type, 'consumable');
   assert.equal(typeof d.uploadLimit, 'string', 'the page calls toLowerCase() on the limits');
   assert.equal(typeof d.downloadLimit, 'string');
   assert.deepEqual(r.active.session['aa:bb:cc:dd:ee:01'], { mac: 'aa:bb:cc:dd:ee:01', address: '10.0.0.5', ifname: 'br-lan', brlan: 'br-lan', uptime: 60, idle: 0, upload: 0, download: 0, rx: 0, tx: 0 });
