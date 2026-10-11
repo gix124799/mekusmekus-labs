@@ -250,3 +250,19 @@ test('GET /api/status reflects unpaid', async () => {
   assert.equal(body.active, false);
   server.close();
 });
+
+test('GET /admin/api/logs requires a valid admin session and returns getRecent()', async () => {
+  const adminAuth = fakeAdminAuth('tok123');
+  const { server } = createServer({ session: fakeSession(false), arp: fakeArp('m1'), ratePesosPerMinute: 1, adminAuth });
+  const port = await listen(server);
+  try {
+    const unauth = await request(port, 'GET', '/admin/api/logs');
+    assert.equal(unauth.status, 401);
+
+    const auth = await request(port, 'GET', '/admin/api/logs', { headers: { Cookie: 'vendo5_admin=tok123' } });
+    assert.equal(auth.status, 200);
+    assert.ok(Array.isArray(JSON.parse(auth.body)));
+  } finally {
+    server.close();
+  }
+});

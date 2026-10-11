@@ -1,6 +1,7 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const { getRecent } = require('./logger');
 
 const PAY_INTENT_TTL_MS = 10000;
 const THEME_DIR = path.join(__dirname, '..', 'public', 'theme');
@@ -142,7 +143,7 @@ function serveThemeFile(urlPath, res) {
   });
 }
 
-function createServer({ session, arp, ratePesosPerMinute, adminAuth }) {
+function createServer({ session, firewall, arp, ratePesosPerMinute, adminAuth }) {
   let pendingPayer = null; // { mac, at }
 
   // Ruling (code-review fix pass): don't clear on a successful consume —
@@ -220,6 +221,13 @@ function createServer({ session, arp, ratePesosPerMinute, adminAuth }) {
       if (!isAdminSession()) { res.writeHead(401).end(); return; }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(session.all()));
+      return;
+    }
+
+    if (req.method === 'GET' && req.url === '/admin/api/logs') {
+      if (!isAdminSession()) { res.writeHead(401).end(); return; }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(getRecent()));
       return;
     }
 
