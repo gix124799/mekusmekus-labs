@@ -1,0 +1,68 @@
+const { Server } = require('socket.io');
+
+const COOKIE = 'vendo5_sid';
+
+function parseCookies(header) {
+  const out = {};
+  for (const part of String(header || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0) out[part.slice(0, i).trim()] = part.slice(i + 1).trim();
+  }
+  return out;
+}
+
+function ipOf(socket) {
+  const fwd = socket.handshake.headers['x-forwarded-for'];
+  const raw = (fwd ? String(fwd).split(',')[0].trim() : socket.handshake.address) || '';
+  return raw.replace(/^::ffff:/, '');
+}
+
+// Mounts socket.io at /admin (the path the original frontend connects to) and routes each event id
+// through the table. events: { '<id>': { handler(payload, ctx), guard, fallback } }.
+//   guard: the session must be logged in and unexpired, else the socket is disconnected and the
+//          handler never runs (the original's per-event expiry check).
+//   fallback: what the client is answered if the handler throws (handlers never throw into the socket).
+function attachWire(httpServer, { events, sessions, log = () => {}, cookieName = COOKIE }) {
+  const io = new Server({ path: '/admin', serveClient: false, transports: ['websocket', 'polling'], maxHttpBufferSize: 262144 });
+  io.attach(httpServer);
+
+  // engine.io now owns every request under "/admin/". The original nginx redirected a bare "/admin/"
+  // (no EIO query) to the dashboard; do the same before engine.io can answer it with a 400.
+  const wired = httpServer.listeners('request').slice();
+  httpServer.removeAllListeners('request');
+  httpServer.on('request', (req, res) => {
+    if (req.url.startsWith('/admin/') && !/[?&]EIO=/.test(req.url)) {
+      res.writeHead(302, { Location: '/admin?page=dashboard' }).end();
+      return;
+    }
+    for (const l of wired) l.call(httpServer, req, res);
+  });
+
+  io.use((socket, next) => {
+    socket.data.sid = parseCookies(socket.request.headers.cookie)[cookieName] || '';
+    next();
+  });
+
+  io.on('connection', (socket) => {
+    for (const [id, def] of Object.entries(events)) {
+      socket.on(id, async (...args) => {
+        const ack = typeof args[args.length - 1] === 'function' ? args.pop() : () => {};
+        const session = sessions.get(socket.data.sid); // resolved per event so an expiry takes effect at once
+        if (def.guard && !(session && session.allowed)) {
+          socket.disconnect(true);
+          return;
+        }
+        try {
+          ack(await def.handler(args[0], { session, socket, ip: ipOf(socket) }));
+        } catch (e) {
+          log('error', `wire handler ${id} failed`, { error: e && e.message });
+          ack(def.fallback);
+        }
+      });
+    }
+  });
+
+  return io;
+}
+
+module.exports = { attachWire, parseCookies, ipOf, COOKIE };
