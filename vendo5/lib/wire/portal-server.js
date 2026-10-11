@@ -5,7 +5,7 @@ const MAX_EVENTS = 40; // per socket per window: the portal's sockets are anonym
 
 // The customer portal's socket (socket.io's default path, as the original page connects). A client is the device
 // behind the socket's address: identify(socket) -> its MAC (or null). events: { '<id>': { handler(payload, ctx), fallback } }.
-function attachPortal(httpServer, { events, identify, log = () => {}, now = Date.now }) {
+function attachPortal(httpServer, { events, identify, log = () => {}, now = Date.now, resolve = () => null, plain = (x) => x }) {
   const io = new Server({ serveClient: false, transports: ['websocket', 'polling'], maxHttpBufferSize: 65536 });
   io.attach(httpServer);
 
@@ -18,10 +18,10 @@ function attachPortal(httpServer, { events, identify, log = () => {}, now = Date
 
   io.on('connection', (socket) => {
     // a page asking for something we do not know (another theme's protocol) is worth seeing in the log
-    socket.onAny((ev, ...a) => { if (!events[ev]) log('warn', 'portal: event with no handler', { ev: String(ev).slice(0, 60), args: JSON.stringify(a.filter((x) => typeof x !== 'function')).slice(0, 200), auth: JSON.stringify(socket.handshake.auth).slice(0, 80) }); });
+    socket.onAny((ev, ...a) => { if (!events[ev] && !resolve(ev, socket)) log('warn', 'portal: event with no handler', { ev: String(ev).slice(0, 60), plain: plain(String(ev)).slice(0, 60), args: JSON.stringify(a.filter((x) => typeof x !== 'function')).slice(0, 200), auth: JSON.stringify(socket.handshake.auth).slice(0, 80) }); });
     let windowStart = now();
     let count = 0;
-    for (const [id, def] of Object.entries(events)) {
+    const bind = (id, def) => {
       socket.on(id, async (...args) => {
         const ack = typeof args[args.length - 1] === 'function' ? args.pop() : () => {};
         if (now() - windowStart > WINDOW_MS) { windowStart = now(); count = 0; }
@@ -33,7 +33,11 @@ function attachPortal(httpServer, { events, identify, log = () => {}, now = Date
           ack(def.fallback);
         }
       });
-    }
+    };
+    for (const [id, def] of Object.entries(events)) bind(id, def);
+    // another theme's events (its own naming) are looked up the first time they arrive
+    const bound = new Set();
+    socket.onAny((ev) => { if (events[ev] || bound.has(ev)) return; const def = resolve(ev, socket); if (def) { bound.add(ev); bind(ev, def); } });
   });
 
   // Tell every open page of one device (a coin was inserted, an admin wrote in the chat...).

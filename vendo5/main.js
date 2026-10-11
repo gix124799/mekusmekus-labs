@@ -35,9 +35,10 @@ const { createChatHandlers, clientSend } = require('./lib/wire/chat');
 const { createEloadHandlers } = require('./lib/wire/eload');
 const { createOfflinePageHandlers } = require('./lib/wire/offline-pages');
 const { createChat } = require('./lib/store/chat');
-const { createPortalPages } = require('./lib/ui/portal-pages');
+const { createPortalPages, defaultHide } = require('./lib/ui/portal-pages');
 const { createPortalHandlers, KEYS: PORTAL_KEYS } = require('./lib/wire/portal');
 const { attachPortal } = require('./lib/wire/portal-server');
+const { createThemeResolver } = require('./lib/wire/portal-v2');
 const { createPortalOps } = require('./lib/money/portal-ops');
 const { createWallet } = require('./lib/money/wallet');
 const { createFileArea } = require('./lib/system/files');
@@ -209,13 +210,14 @@ try {
     headScript: process.env.VENDO5_PROBE_JS ? `<script>${require('node:fs').readFileSync(process.env.VENDO5_PROBE_JS, 'utf8')}</script>` : '' });
   const portalEvents = createPortalHandlers({ sessions: session, money, ops, wallet, clients, settings, clientLog, chat: { clientHasUnread: (m) => chat.clientHasUnread(m), markClientSeen: (m) => chat.markClientSeen(m), history: (m) => chat.history(m), send: (m, t) => clientSend({ chat, push }, m, t) }, media, vouchers, arp, version,
     listenCoin: (mac, socket) => hooks.listenCoin(mac, socket), stopCoin: (mac) => hooks.stopCoin(mac), ratePesosPerMinute: () => pesos_per_minute });
+  const themeResolver = createThemeResolver({ log, handlers: { handshake: { fallback: {}, handler: () => ({ footer: settings.read().footer, hostname: deviceName.toUpperCase(), version, redirect: String(settings.read().redirect || ''), options: { ...defaultHide(), defaulttheme: false }, customTheme: '', ioKey: PORTAL_KEYS, redirecturl: '' }) } } });
   const resellers = createResellers({ file: path.join(stateDir, 'resellers.json') });
   const resellerSessions = createSessions({});
   const resellerRoutes = createResellerRoutes({ root: uiDir, version, hostname: deviceName, sessions: resellerSessions, resellers });
   const resellerEvents = createResellerPortalHandlers({ sessions: resellerSessions, resellers, vouchers, credits, tickets, sales, licence, mainlog, version });
   events['@nav-00112347'] = createResellerAdminHandlers({ resellers, mainlog })['@nav-00112347'];
   const routes = (req, res) => resellerRoutes(req, res) || adminRoutes(req, res);
-  admin = { portalPages, portalEvents, hooks, wallet, sessionsStore: session, serveStatic: createStatic({ root: uiDir }), chatApi: { history: (m) => chat.history(m), send: (m, t) => clientSend({ chat, push }, m, t), seen: (m) => chat.markClientSeen(m) }, setPush: (f) => { pushToAdmins = f; }, routes, events, sessions, resellerEvents, resellerSessions, mainlog, money, sales, access, clientLog, settings };
+  admin = { themeResolver, portalPages, portalEvents, hooks, wallet, sessionsStore: session, serveStatic: createStatic({ root: uiDir }), chatApi: { history: (m) => chat.history(m), send: (m, t) => clientSend({ chat, push }, m, t), seen: (m) => chat.markClientSeen(m) }, setPush: (f) => { pushToAdmins = f; }, routes, events, sessions, resellerEvents, resellerSessions, mainlog, money, sales, access, clientLog, settings };
 } catch (e) {
   log('error', 'admin page unavailable; the portal runs without it', { error: e.message });
 }
@@ -223,11 +225,11 @@ try {
 const { server, consumePendingPayer, setPendingPayer } = createServer({ session, arp, ratePesosPerMinute: pesos_per_minute, adminRoutes: admin && admin.routes, money: admin && admin.money, chat: admin && admin.chatApi,
   portal: admin && { render: (p) => admin.portalPages.render(p), themeDir: () => admin.portalPages.themeDir(), serveStatic: admin.serveStatic } });
 const inserts = new Map(); // mac -> { timer }: devices with the portal's coin popup open
-const endInsert = (mac, io) => { const i = inserts.get(mac); if (!i) return; clearTimeout(i.timer); inserts.delete(mac); io.pushTo(mac, PORTAL_KEYS[21], { done: true, countdown: 0, message: '' }); };
+const endInsert = (mac, io) => { const i = inserts.get(mac); if (!i) return; clearTimeout(i.timer); inserts.delete(mac); io.pushTo(mac, PORTAL_KEYS[21], { done: true, countdown: 0, countdownMax: 0, type: 'info', message: '' }); };
 if (admin) {
   const adminIo = attachWire(server, { events: admin.events, sessions: admin.sessions, log });
   admin.setPush((ev, payload) => adminIo.pushAuthed(ev, payload));
-  const portalIo = attachPortal(server, { events: admin.portalEvents, identify: (sock) => arp.ipToMac(String(sock.handshake.address || '').replace(/^::ffff:/, '')), log });
+  const portalIo = attachPortal(server, { events: admin.portalEvents, identify: (sock) => arp.ipToMac(String(sock.handshake.address || '').replace(/^::ffff:/, '')), log, ...admin.themeResolver });
   const armInsert = (mac) => {
     const old = inserts.get(mac);
     if (old) clearTimeout(old.timer);

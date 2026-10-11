@@ -15,11 +15,12 @@ const K = (n) => `@portal-${n}`;
 const ask = (c, id, payload) => new Promise((resolve) => c.emit(id, payload, resolve));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function boot() {
+async function boot(settings) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v5pw-'));
   const gpio = path.join(root, 'gpio');
   fs.mkdirSync(path.join(gpio, 'gpio17'), { recursive: true });
   for (const f of ['export', 'unexport', 'gpio17/value', 'gpio17/direction', 'gpio17/edge']) fs.writeFileSync(path.join(gpio, f), '0');
+  if (settings) { fs.mkdirSync(path.join(root, 'state'), { recursive: true }); fs.writeFileSync(path.join(root, 'state', 'settings.json'), JSON.stringify(settings)); }
   const p = spawn(process.execPath, [MAIN], { env: { ...process.env, VENDO5_CONFIG_DIR: path.join(root, 'cfg'), VENDO5_DEFAULTS_DIR: path.join(__dirname, '..', 'config'), VENDO5_SESSION_FILE: path.join(root, 's.json'), VENDO5_STATE_DIR: path.join(root, 'state'), VENDO5_UI_DIR: UI, VENDO5_GPIO_BASE: gpio, VENDO5_PORTAL_PORT: '0', VENDO5_FIREWALL_CMD: 'noop', VENDO5_ARP_FAKE_MAC: MAC } });
   let out = '';
   p.stdout.on('data', (c) => { out += c; });
@@ -73,4 +74,25 @@ test('the Themes page script is added to the portal page (and only when enabled)
   assert.ok(html.includes('<script>window.mine=1<\\/script><b></script></body>'));
   script = '';
   assert.ok(!mk().render('dashboard').includes('window.mine'));
+});
+
+test('the React theme: its cipher, its handshake, then the same portal events by the keys it is given', async () => {
+  const { enc, dec } = require('../lib/wire/themecipher');
+  assert.equal(enc('qrS6V4ZL'), 'XNKQJCHX'); // seen from the real page
+  assert.equal(dec('XNKQJCHX'), 'QRS6V4ZL');
+  const s = await boot({ portalTheme: { enable: true, script: '', set: 'newTheme' } });
+  const id = 'qrS6V4ZL';
+  const c = connect(`http://127.0.0.1:${s.port}`, { reconnection: false, transports: ['websocket'], auth: { id } });
+  const up = new Promise((r) => c.on('connect', r));
+  try {
+    assert.match((await get(s.port, '/')).body, /client\/theme\/static\/js\/main/);
+    await up;
+    const hs = await ask(c, enc(id));
+    assert.equal(hs.hostname, 'ETHYLNET');
+    assert.equal(hs.ioKey[2], K(2));
+    assert.ok(hs.options && 'eload' in hs.options);
+    const info = await ask(c, hs.ioKey[2]);
+    assert.equal(info.mac, MAC);
+    assert.equal(info.total_upload_data, 0);
+  } finally { c.close(); s.stop(); }
 });

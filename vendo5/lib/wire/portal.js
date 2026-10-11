@@ -22,7 +22,7 @@ function createPortalHandlers({ sessions, money, ops, wallet, clients, settings,
     const live = !!s && (s.paused || s.expiresAt > t);
     const out = {
       internet: true, interface: 'br-lan', id: mac || '', mac: mac || '', address: (mac && ipOf(mac)) || ctx.ip || '', credit: c.credit || 0, point: c.point || 0,
-      status: !live ? 'Disconnected' : s.paused ? 'Paused' : s.disconnected ? 'Disconnected' : 'Connected', now: t, trial: false, lastinsertedvendo: 'main',
+      status: !live ? 'Disconnected' : s.paused ? 'Paused' : s.disconnected ? 'Disconnected' : 'Connected', now: t, trial: false, lastinsertedvendo: 'main', max_data_limit: (s && s.max_data_limit) || 0, start_date: (s && s.startedAt) || 0, total_download_data: 0, total_upload_data: 0,
       ulimit: (s && s.upload) || '', dlimit: (s && s.download) || '', RXRate: 0, TXRate: 0, upload: 0, download: 0, code: (s && s.code) || '', resduration: '00:00:00',
     };
     out.validity = 0;
@@ -87,7 +87,7 @@ function createPortalHandlers({ sessions, money, ops, wallet, clients, settings,
       const r = listenCoin(ctx.mac, ctx.socket);
       if (!r.ok) return { message: r.message };
       const s = sessions.getSession(ctx.mac);
-      return { message: s && s.paused ? 'Resume' : 'Insert', rate: { rates: rateCfg().rate, type: rateCfg().set.type, rtype: rateCfg().set.type }, countdown: r.countdown, countdownMax: cfg().main.countdownMax, expiry: r.expiry };
+      return { message: s && s.paused ? 'Resume' : 'Insert', rate: { rates: rateCfg().rate, type: rateCfg().set.type, rtype: rateCfg().set.type }, countdown: r.countdown, countdownMax: cfg().main.countdownMax, expiry: r.expiry, credit: wallet.balance(ctx.mac), incoin: 0 };
     }),
     [K(14)]: guarded({ vendoList: {} }, () => { const m = cfg().main; return { vendoList: { main: { id: 'main', name: m.name, insertbtn: m.insertbtn, countdownMax: m.countdownMax } }, lastinsertedvendo: 'main' }; }),
     [K(15)]: guarded({ rates: [] }, () => ({ rates: rateCfg().rate.filter((r) => r.show !== false), type: rateCfg().set.type, lastinsertedvendo: 'main' })),
