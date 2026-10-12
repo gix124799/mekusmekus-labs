@@ -113,3 +113,28 @@ test('limits come from the options (calibration for other coin acceptors)', () =
   coin(30, 5);
   assert.deepEqual(st.coins, [30]);
 });
+
+test('train: a whole coin counted elsewhere is checked by the same rules', () => {
+  const { st, guard } = rig();
+  guard.train(5, 95);
+  guard.train(1, NaN); // one pulse has no gap
+  assert.deepEqual(st.coins, [5, 1]);
+  guard.train(5, 3);
+  guard.train(25, 90);
+  st.payer = false;
+  guard.train(1, NaN);
+  assert.deepEqual(st.coins, [5, 1]);
+  assert.match(st.lines[0], /3 ms apart/);
+  assert.match(st.lines[1], /25 pulses/);
+  assert.match(st.lines[2], /orphan/);
+  assert.equal(guard.isLocked(), true, 'three strikes lock it like GPIO pulses');
+  guard.train(1, NaN);
+  assert.deepEqual(st.coins, [5, 1]);
+});
+
+test('train: a malformed event is rejected', () => {
+  const { st, guard } = rig();
+  for (const n of [0, -1, 1.5, '3', null]) guard.train(n, 50);
+  assert.deepEqual(st.coins, []);
+  assert.match(st.lines[0], /malformed/);
+});

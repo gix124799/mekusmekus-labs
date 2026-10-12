@@ -29,13 +29,25 @@ function createCoinGuard({ onCoin, hasPayer, notify, log, onLock = () => {}, min
     }, LOCK_MS);
   }
 
-  function endTrain() {
-    const { count, bad } = train;
-    train = null;
+  // One coin's verdict, whether its pulses were timed here (GPIO) or by a sub-vendo's ESP8266.
+  function judge(count, bad) {
     if (bad) return suspicious(bad);
     if (count > maxPulses) return suspicious(`${count} pulses, more than the largest coin (${maxPulses})`);
     if (!hasPayer()) return suspicious('orphan pulse, no one pressed Insert Coin');
     onCoin(count);
+  }
+
+  function endTrain() {
+    const { count, bad } = train;
+    train = null;
+    judge(count, bad);
+  }
+
+  // A whole coin counted elsewhere: its pulse count and the smallest gap between its pulses (NaN for one pulse).
+  function wholeTrain(count, minGap) {
+    if (locked) return;
+    if (!(Number.isInteger(count) && count >= 1)) return suspicious('malformed coin event');
+    judge(count, count > 1 && minGap < minGapMs ? `pulses ${minGap} ms apart, too fast for a coin (piezo or noise)` : null);
   }
 
   function pulse() {
@@ -52,7 +64,7 @@ function createCoinGuard({ onCoin, hasPayer, notify, log, onLock = () => {}, min
     train.timer = setTimer(endTrain, trainGapMs);
   }
 
-  return { pulse, isLocked: () => locked };
+  return { pulse, train: wholeTrain, isLocked: () => locked };
 }
 
 module.exports = { createCoinGuard };
