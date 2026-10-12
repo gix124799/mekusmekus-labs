@@ -9,7 +9,7 @@ const decode = (t) => String(t).replace(/&amp;/g, '&').replace(/&lt;/g, '<').rep
 
 // The customer portal's events. The original page emits `keys[n]` for operation n; n is fixed by the page, the names
 // are ours (the table goes to the page in the `wisft` global). Every handler answers for the device behind the socket.
-function createPortalHandlers({ sessions, money, ops, wallet, clients, settings, clientLog, chat, push, media, vouchers, sales, arp, listenCoin, stopCoin = () => {}, version, now = Date.now, ratePesosPerMinute, mainlog }) {
+function createPortalHandlers({ sessions, money, ops, wallet, clients, settings, clientLog, chat, push, media, vouchers, sales, arp, listenCoin, stopCoin = () => {}, version, now = Date.now, ratePesosPerMinute, mainlog, vendoOf = () => 'main' }) {
   const guarded = (fallback, handler) => ({ fallback, handler });
   const cfg = () => settings.read();
   const noDevice = 'Device not recognised';
@@ -97,7 +97,13 @@ function createPortalHandlers({ sessions, money, ops, wallet, clients, settings,
       const s = sessions.getSession(ctx.mac);
       return { message: s && s.paused ? 'Resume' : 'Insert', rate: { rates: rateCfg().rate, type: rateCfg().set.type, rtype: rateCfg().set.type }, countdown: r.countdown, countdownMax: cfg().main.countdownMax, expiry: r.expiry, credit: wallet.balance(ctx.mac), incoin: 0 };
     }),
-    [K(14)]: guarded({ vendoList: {} }, () => { const m = cfg().main; return { vendoList: { main: { id: 'main', name: m.name, insertbtn: m.insertbtn, countdownMax: m.countdownMax } }, lastinsertedvendo: 'main' }; }),
+    [K(14)]: guarded({ vendoList: {} }, (_p, ctx) => {
+      const id = vendoOf(ctx.mac);
+      const s = cfg();
+      const v = id === 'main' ? s.main : (s.sub || {})[id];
+      if (!v) return { vendoList: {}, lastinsertedvendo: 'main' };
+      return { vendoList: { [id]: { id, name: v.name, insertbtn: s.main.insertbtn, countdownMax: v.countdownMax } }, lastinsertedvendo: id };
+    }),
     [K(15)]: guarded({ rates: [] }, () => ({ rates: rateCfg().rate.filter((r) => r.show !== false), type: rateCfg().set.type, lastinsertedvendo: 'main' })),
     [K(17)]: guarded([], () => ['main']),
     [K(18)]: guarded({ rates: [], rtype: 0 }, () => ({ rates: rateCfg().rate, rtype: rateCfg().set.type })),

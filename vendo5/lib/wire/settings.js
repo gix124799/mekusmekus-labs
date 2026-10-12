@@ -7,11 +7,12 @@ const EDGES = ['rising', 'falling', 'both'];
 // Settings page: the vendo (coin machine) section, the coin rate table, pins, bans, trial, redirect, footer,
 // block-rule switches, game ports and the point system. Sub-vendos (other machines) do not exist here: the only
 // vendo is "main".
-function createSettingsHandlers({ settings, mainlog, restart = () => {}, deviceName, version = '', lanInterface = '' }) {
+function createSettingsHandlers({ settings, vendos, mainlog, restart = () => {}, deviceName, version = '', lanInterface = '' }) {
   const log = (t) => mainlog.write('system', t);
   const guarded = (fallback, handler) => ({ guard: true, fallback, handler });
 
-  const vendoInfo = (s) => ({ key: s.key, sub: { main: { ...s.main, id: 'main' } }, insertBanDuration: s.insertBanDuration, insertBancount: s.insertBancount });
+  const subsOf = (s) => (vendos ? s.sub || {} : {});
+  const vendoInfo = (s) => ({ key: s.key, sub: { main: { ...s.main, id: 'main' }, ...subsOf(s) }, insertBanDuration: s.insertBanDuration, insertBancount: s.insertBancount });
   const clip = (v, n) => String(v).slice(0, n);
 
   return {
@@ -21,7 +22,7 @@ function createSettingsHandlers({ settings, mainlog, restart = () => {}, deviceN
     }),
     '@nav-22125': guarded({}, () => {
       const s = settings.read();
-      return { vendoInfo: vendoInfo(s), request: [], vendoOnline: { main: { version, interface: lanInterface } } };
+      return { vendoInfo: vendoInfo(s), request: vendos ? vendos.requests().map((r) => ({ id: r.id, name: r.name, mac: r.mac })) : [], vendoOnline: { main: { version, interface: lanInterface }, ...(vendos ? vendos.online() : {}) } };
     }),
 
     '@nav-225585': guarded({}, () => ({ id: 'main', pins: settings.read().main.pins })),
@@ -76,15 +77,30 @@ function createSettingsHandlers({ settings, mainlog, restart = () => {}, deviceN
           return {};
         case 'edit-name-sub-vendo':
           if (typeof p.name !== 'string' || p.name.length < 5 || p.name.length > 32) return { err: 'Name must be 5+ length' };
+          if (vendos && p.id && p.id !== 'main') return vendos.rename(p.id, p.name) ? {} : { err: 'Unknown vendo' };
           settings.change((s) => { s.main.name = p.name; });
           return {};
         case 'edit-description-sub-vendo':
+          if (vendos && p.id && p.id !== 'main') return vendos.describe(p.id, clip(p.description ?? '', 80)) ? {} : { err: 'Unknown vendo' };
           settings.change((s) => { s.main.description = clip(p.description ?? '', 80); });
           return {};
         case 'set-coundown': // (sic) the page's own spelling
           if (!(Number.isInteger(p.countdownMax) && p.countdownMax >= 10 && p.countdownMax <= 120)) return 'Error';
+          if (vendos && p.id && p.id !== 'main') return vendos.setCountdown(p.id, p.countdownMax) ? '' : 'Error';
           settings.change((s) => { s.main.countdownMax = p.countdownMax; });
           return '';
+        case 'accept-sub-vendo': {
+          if (!vendos) return 'Error';
+          if (String(settings.read().key || '').length !== 14) return { err: 'Set the 14-character key first' };
+          const id = vendos.accept(String(p.id));
+          if (!id) return 'Error';
+          log(`Admin accepted sub-vendo ${p.id} as ${id}`);
+          return {};
+        }
+        case 'remove-sub-vendo':
+          if (!vendos || !vendos.remove(String(p.id))) return 'Error';
+          log(`Admin removed sub-vendo ${p.id}`);
+          return {};
         case 'set-corrector': {
           const d = p.coinsBlockerDelay;
           if (!(Number.isInteger(d) && d >= 500 && d <= 2000)) return 'Error';

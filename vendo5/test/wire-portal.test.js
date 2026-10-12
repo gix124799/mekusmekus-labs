@@ -38,3 +38,12 @@ test('the dashboard code field is the voucher code, else the resume code', () =>
   sessions.addTime('m2', 60000, { code: 'VOUCH1' }, 100000);
   assert.equal(call(h, 2, undefined, 'm2').code, 'VOUCH1');
 });
+
+test('the portal vendo list is the vendo the phone is at', () => {
+  const sessions = createSessionStore('/nonexistent/s.json');
+  sessions.load();
+  const settings = { read: () => ({ main: { name: 'Main', insertbtn: true, countdownMax: 15 }, sub: { sub1: { id: 'sub1', name: 'Kanto', countdownMax: 30 } } }) };
+  const h = createPortalHandlers({ sessions, settings, clients: { all: () => ({}) }, clientLog: { read: () => ({ data: '' }) }, arp: { neighbors: () => ({}) }, vendoOf: (mac) => (mac === 'm1' ? 'sub1' : 'main') });
+  assert.deepEqual(h['@portal-14'].handler(undefined, { mac: 'm1' }), { vendoList: { sub1: { id: 'sub1', name: 'Kanto', insertbtn: true, countdownMax: 30 } }, lastinsertedvendo: 'sub1' });
+  assert.equal(h['@portal-14'].handler(undefined, { mac: 'm2' }).lastinsertedvendo, 'main');
+});
