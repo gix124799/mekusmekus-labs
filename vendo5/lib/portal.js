@@ -144,7 +144,7 @@ function reply(res, r) {
   res.end(JSON.stringify(r));
 }
 
-function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, chat, portal }) {
+function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, chat, portal, subvendo }) {
   const pending = new Map(); // vendo id -> { mac, at, ttl }: who is inserting coins there
 
   // Ruling (code-review fix pass): don't clear on a successful consume —
@@ -203,6 +203,13 @@ function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, ch
     if (portal && req.url.startsWith('/client/theme/')) {
       req.url = req.url.replace('/client/theme/', `/client/${portal.themeDir()}/`);
       if (portal.serveStatic(req, res)) return;
+    }
+
+    // Sub-vendo ESP8266s (signed, see lib/subvendo.js); before clientMac() since the handler looks the ESP up itself.
+    if (subvendo && req.method === 'POST' && req.url === '/subvendo/poll') {
+      const ip = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+      readJsonBody(req).then((b) => reply(res, subvendo(b, ip)));
+      return;
     }
 
     // /admin and the admin frontend's static files; before clientMac(), which shells out to `ip neigh`.

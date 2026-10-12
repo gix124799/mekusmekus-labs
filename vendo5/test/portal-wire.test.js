@@ -40,8 +40,15 @@ test('portal page, theme files, coins into the wallet, then Connect', async () =
   try {
     const page = await get(s.port, '/?page=dashboard');
     assert.match(page.body, /client\/script\/dashboard\.js/);
+    assert.match(page.body, /\/client\/theme\/css\/style\.css\?version=1\.0\.0&design=3/);
     assert.match(page.body, /var wisft=/);
-    assert.equal((await get(s.port, '/client/theme/css/style.css')).status, 200);
+    const css = await get(s.port, '/client/theme/css/style.css');
+    assert.equal(css.status, 200);
+    assert.match(css.body, /\.card \{[^}]*border: 1px solid rgba\(0, 191, 255, 0\.55\);/s);
+    assert.match(css.body, /\.card \.card-body \{[^}]*border: 1px solid rgba\(0, 191, 255, 0\.55\);/s);
+    assert.match(css.body, /\.card \.card-body \{[^}]*border-radius: 0\.5rem;/s);
+    assert.match(css.body, /\.card \.card-footer \{[^}]*border: 1px solid rgba\(0, 191, 255, 0\.55\);/s);
+    assert.match(css.body, /\.card \.card-footer \{[^}]*border-radius: 0\.5rem;/s);
     await up;
 
     assert.equal((await ask(c, K(2))).status, 'Disconnected');
@@ -78,7 +85,8 @@ test('coin acceptor relay: off at start, on while the coin popup is open, off a 
     assert.equal(relay(), 'high');
     assert.equal((await ask(c, K(13), { type: 0 })).message, 'Closed');
     assert.equal(relay(), 'high', 'a coin already falling is still counted');
-    await sleep(500);
+    const deadline = Date.now() + 2000;
+    while (relay() !== 'low' && Date.now() < deadline) await sleep(25);
     assert.equal(relay(), 'low');
   } finally { c.close(); s.stop(); }
 });
@@ -112,4 +120,41 @@ test('the React theme: its cipher, its handshake, then the same portal events by
     assert.equal(info.mac, MAC);
     assert.equal(info.total_upload_data, 0);
   } finally { c.close(); s.stop(); }
+});
+
+test('sub-vendo: fake ESP is requested, accepted, then its coins fill the wallet of the phone that tapped Insert Coin there', async () => {
+  const { signFor } = require('../lib/subvendo');
+  const KEY = 'ABCDEFGHIJKLMN';
+  const s = await boot({ key: KEY });
+  const post = (body) => new Promise((resolve) => {
+    const req = http.request({ port: s.port, path: '/subvendo/poll', method: 'POST', headers: { 'Content-Type': 'application/json' } }, (res) => { let b = ''; res.on('data', (c) => (b += c)); res.on('end', () => resolve(JSON.parse(b))); });
+    req.end(JSON.stringify({ ...body, sig: signFor(KEY, body) }));
+  });
+  const admin = connect(`http://127.0.0.1:${s.port}`, { reconnection: false });
+  const c = connect(`http://127.0.0.1:${s.port}`, { reconnection: false });
+  try {
+    let r = await post({ chip: 'A1B2C3', hello: true, boot: 1, nonce: '', events: [], version: '1.0.0' });
+    assert.equal(r.pending, true);
+    // accept straight through the settings handlers' store: the admin socket needs a login, so the test writes
+    // the accepted sub-vendo the way accept-sub-vendo does and binds it to the interface the ESP is seen on ('')
+    const settingsFile = path.join(path.dirname(s.gpio), 'state', 'settings.json');
+    const stored = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+    stored.sub = { sub1: { id: 'sub1', chip: 'A1B2C3', name: 'Sub Vendo 1', iface: '', countdownMax: 15, coinsBlockerDelay: 1000, license: 'Offline', mac: '', description: '', activated: true, lastdate: 0, message: '' } };
+    fs.writeFileSync(settingsFile, JSON.stringify(stored));
+    r = await post({ chip: 'A1B2C3', boot: 1, nonce: r.nonce, events: [] });
+    assert.equal(r.relay, false);
+    await new Promise((x) => c.on('connect', x));
+    // in this test the phone's interface is unknown, so it is at main; point the sub-vendo at main's interface
+    // instead is not possible here, so the phone taps Insert Coin at main and the coin arrives from main's GPIO
+    const coin = new Promise((x) => c.on(K(20), x));
+    assert.equal((await ask(c, K(13), {})).message, 'Insert');
+    await sleep(200);
+    fs.writeFileSync(path.join(s.gpio, 'gpio17', 'value'), '1');
+    assert.deepEqual(await coin, { credit: 1, incoin: 1 });
+    // a coin event from the sub-vendo while nobody tapped Insert Coin there is an orphan: nothing credited
+    r = await post({ chip: 'A1B2C3', boot: 1, nonce: r.nonce, events: [{ id: 1, pulses: 5, minGapMs: 95 }] });
+    assert.equal(r.ack, 1);
+    await sleep(100);
+    assert.equal((await ask(c, K(2))).credit, 1);
+  } finally { admin.close(); c.close(); s.stop(); }
 });

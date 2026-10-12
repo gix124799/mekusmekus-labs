@@ -16,6 +16,9 @@ const { createMainLog } = require('./lib/system/mainlog');
 const { createStats } = require('./lib/system/stats');
 const { createWatchdog } = require('./lib/system/watchdog');
 const { createCoinGuard } = require('./lib/coinguard');
+const { createVendos } = require('./lib/vendos');
+const { createSubvendoApi } = require('./lib/subvendo');
+const { RESUME_SCRIPT } = require('./lib/ui/resume-script');
 const { createSessions } = require('./lib/wire/session');
 const { createMainHandlers } = require('./lib/wire/main');
 const { createNavHandlers } = require('./lib/wire/nav');
@@ -155,6 +158,7 @@ try {
   const tickets = createTickets({ file: path.join(stateDir, 'vouchers', 'tickets.json') });
   const credits = createCredits({ file: path.join(stateDir, 'credits', 'list.json') });
   const settings = createSettings({ file: path.join(stateDir, 'settings.json'), deviceName, coinPin: coin_pin });
+  const vendos = createVendos({ settings });
   const clients = createClients({ file: path.join(stateDir, 'clients.json') });
   const access = createAccess({ file: path.join(stateDir, 'access.json') });
   const clientLog = createClientLog({ dir: path.join(stateDir, 'userlogs') });
@@ -187,7 +191,7 @@ try {
     ...createPppoeHandlers({ store: pppoeStore, system: pppoeSystem, mainlog }),
     ...createNetworkHandlers({ file: path.join(stateDir, 'network.json'), uci, runCommand, arp, mainlog, leasesFile: process.env.VENDO5_LEASES_FILE || (hasUbus ? '/mnt/wifi5/dhcp.leases' : '/tmp/dhcp.leases'), crontabFile: process.env.VENDO5_CRONTAB || (hasUbus ? '/etc/crontabs/root' : path.join(stateDir, 'crontab')) }),
     ...createSystemHandlers({ appDir, runCommand, mainlog, restart, enabled: updateEnabled }),
-    ...createSettingsHandlers({ settings, mainlog, deviceName, restart, version, lanInterface: config.network.lan_interface }),
+    ...createSettingsHandlers({ settings, vendos, mainlog, deviceName, restart, version, lanInterface: config.network.lan_interface }),
     ...createDeviceHandlers({ clients, access, clientLog, sessions: session, money, firewall, mainlog, save: () => session.save() }),
     ...createSalesHandlers({ sales, deviceName, mainlog }),
     ...createMoneyHandlers({ vouchers, credits, tickets, sessions: session, mainlog, endSession: money.endSession, save: () => session.save() }),
@@ -212,9 +216,9 @@ try {
   const wallet = createWallet({ clients, sessions: session, firewall, settings, ratePesosPerMinute: () => pesos_per_minute, access, mainlog, clientLog, save: () => session.save() });
   const portalPages = createPortalPages({ root: uiDir, version, hostname: deviceName, keys: PORTAL_KEYS, hide: () => ({}),
     theme: () => settings.read().portalTheme.set || 'defualt-theme', redirect: () => settings.read().redirect, custom: () => { const t = settings.read().portalTheme; return t.enable ? t.script : ''; },
-    headScript: process.env.VENDO5_PROBE_JS ? `<script>${require('node:fs').readFileSync(process.env.VENDO5_PROBE_JS, 'utf8')}</script>` : '' });
+    headScript: (process.env.VENDO5_PROBE_JS ? `<script>${require('node:fs').readFileSync(process.env.VENDO5_PROBE_JS, 'utf8')}</script>` : '') + RESUME_SCRIPT });
   const portalEvents = createPortalHandlers({ sessions: session, money, ops, wallet, clients, settings, clientLog, chat: { clientHasUnread: (m) => chat.clientHasUnread(m), markClientSeen: (m) => chat.markClientSeen(m), history: (m) => chat.history(m), send: (m, t) => clientSend({ chat, push }, m, t) }, media, vouchers, arp, version,
-    listenCoin: (mac, socket) => hooks.listenCoin(mac, socket), stopCoin: (mac) => hooks.stopCoin(mac), ratePesosPerMinute: () => pesos_per_minute });
+    listenCoin: (mac, socket) => hooks.listenCoin(mac, socket), stopCoin: (mac) => hooks.stopCoin(mac), ratePesosPerMinute: () => pesos_per_minute, vendoOf: (mac) => vendoOf(mac) });
   const themeResolver = createThemeResolver({ log, handlers: { handshake: { fallback: {}, handler: () => ({ footer: settings.read().footer, hostname: deviceName.toUpperCase(), version, redirect: String(settings.read().redirect || ''), options: { ...defaultHide(), defaulttheme: false }, customTheme: '', ioKey: PORTAL_KEYS, redirecturl: '' }) } } });
   const resellers = createResellers({ file: path.join(stateDir, 'resellers.json') });
   const resellerSessions = createSessions({});
@@ -222,55 +226,67 @@ try {
   const resellerEvents = createResellerPortalHandlers({ sessions: resellerSessions, resellers, vouchers, credits, tickets, sales, licence, mainlog, version });
   events['@nav-00112347'] = createResellerAdminHandlers({ resellers, mainlog })['@nav-00112347'];
   const routes = (req, res) => resellerRoutes(req, res) || adminRoutes(req, res);
-  admin = { themeResolver, portalPages, portalEvents, hooks, wallet, sessionsStore: session, serveStatic: createStatic({ root: uiDir }), chatApi: { history: (m) => chat.history(m), send: (m, t) => clientSend({ chat, push }, m, t), seen: (m) => chat.markClientSeen(m) }, setPush: (f) => { pushToAdmins = f; }, routes, events, sessions, resellerEvents, resellerSessions, mainlog, money, sales, access, clientLog, settings };
+  admin = { themeResolver, portalPages, portalEvents, hooks, wallet, sessionsStore: session, serveStatic: createStatic({ root: uiDir }), chatApi: { history: (m) => chat.history(m), send: (m, t) => clientSend({ chat, push }, m, t), seen: (m) => chat.markClientSeen(m) }, setPush: (f) => { pushToAdmins = f; }, routes, events, sessions, resellerEvents, resellerSessions, mainlog, money, sales, access, clientLog, settings, vendos };
 } catch (e) {
   log('error', 'admin page unavailable; the portal runs without it', { error: e.message });
 }
 
-const { server, consumePendingPayer, setPendingPayer, hasPendingPayer } = createServer({ session, arp, ratePesosPerMinute: pesos_per_minute, adminRoutes: admin && admin.routes, money: admin && admin.money, chat: admin && admin.chatApi,
-  portal: admin && { render: (p) => admin.portalPages.render(p), themeDir: () => admin.portalPages.themeDir(), serveStatic: admin.serveStatic } });
-const inserts = new Map(); // mac -> { timer }: devices with the portal's coin popup open
+// Which vendo a phone is at: the interface it is seen on (br-lan = main, a sub-vendo's VLAN = that sub-vendo).
+function vendoOf(mac) { return admin && mac ? admin.vendos.forIface((arp.neighbors()[String(mac).toLowerCase()] || {}).dev) : 'main'; }
+
+let subApi = null; // the sub-vendo poll handler, created after the admin block (needs admin.vendos et al)
+const { server, consumePendingPayer, setPendingPayer, hasPendingPayer, releasePendingPayer } = createServer({ session, arp, ratePesosPerMinute: pesos_per_minute, adminRoutes: admin && admin.routes, money: admin && admin.money, chat: admin && admin.chatApi,
+  portal: admin && { render: (p) => admin.portalPages.render(p), themeDir: () => admin.portalPages.themeDir(), serveStatic: admin.serveStatic },
+  subvendo: admin && ((b, ip) => { const mac = arp.ipToMac(ip); const dev = mac ? (arp.neighbors()[mac.toLowerCase()] || {}).dev : ''; return subApi.handle(b, { iface: dev || '', ip, mac: mac || '' }); }) });
+const inserts = new Map(); // mac -> { timer, vendo }: devices with the portal's coin popup open
 // Coin acceptor power (relay pin from Pin Setup): on while a coin popup is open and the slot is not locked,
-// off coinsBlockerDelay ms after the last popup closes so a coin already falling is still counted.
+// off coinsBlockerDelay ms after the last popup closes so a coin already falling is still counted. The physical
+// relay is main's; a sub-vendo's acceptor relay is switched by its own ESP from the poll reply.
 let coinRelay = () => {}; // set once the gpio is up and a relay pin is configured
-let coinLocked = () => false;
+const guards = new Map(); // vendo id -> coin guard; main's is made with the GPIO, sub-vendos' on first use
+let makeGuard = null; // (vendo) => guard, set with the coin handler below
+const guardOf = (vendo) => { if (!guards.has(vendo) && makeGuard) guards.set(vendo, makeGuard(vendo)); return guards.get(vendo); };
+const coinLocked = (vendo = 'main') => { const g = guards.get(vendo); return !!g && g.isLocked(); };
+const coinsBlockerDelayOf = (vendo) => { const v = admin && admin.vendos.get(vendo); return v ? Number(v.coinsBlockerDelay) || 0 : 0; };
+const hasMainInsert = () => [...inserts.values()].some((x) => x.vendo === 'main');
 let relayOffTimer = null;
-const openCoinSlot = () => { clearTimeout(relayOffTimer); if (!coinLocked()) coinRelay(true); };
+const openCoinSlot = () => { clearTimeout(relayOffTimer); if (!coinLocked('main')) coinRelay(true); };
 const closeCoinSlotSoon = () => {
   clearTimeout(relayOffTimer);
-  const delay = admin ? Number(admin.settings.read().main.coinsBlockerDelay) || 0 : 0;
-  relayOffTimer = setTimeout(() => { if (!inserts.size) coinRelay(false); }, delay);
+  relayOffTimer = setTimeout(() => { if (!hasMainInsert()) coinRelay(false); }, coinsBlockerDelayOf('main'));
 };
-const endInsert = (mac, io) => { const i = inserts.get(mac); if (!i) return; clearTimeout(i.timer); inserts.delete(mac); if (!inserts.size) closeCoinSlotSoon(); io.pushTo(mac, PORTAL_KEYS[21], { done: true, countdown: 0, countdownMax: 0, type: 'info', message: '' }); };
+const endInsert = (mac, io) => { const i = inserts.get(mac); if (!i) return; clearTimeout(i.timer); inserts.delete(mac); releasePendingPayer(mac, Date.now(), coinsBlockerDelayOf(i.vendo), i.vendo); if (!hasMainInsert()) closeCoinSlotSoon(); io.pushTo(mac, PORTAL_KEYS[21], { done: true, countdown: 0, countdownMax: 0, type: 'info', message: '' }); };
 if (admin) {
   const adminIo = attachWire(server, { events: admin.events, sessions: admin.sessions, log });
   admin.setPush((ev, payload) => adminIo.pushAuthed(ev, payload));
   const portalIo = attachPortal(server, { events: admin.portalEvents, identify: (sock) => arp.ipToMac(String(sock.handshake.address || '').replace(/^::ffff:/, '')), log, ...admin.themeResolver });
-  const armInsert = (mac) => {
+  const waitMsFor = (vendo) => (Number((admin.vendos.get(vendo) || {}).countdownMax) || admin.settings.read().main.countdownMax) * 1000;
+  const armInsert = (mac, vendo = (inserts.get(mac) || {}).vendo || 'main', wait = waitMsFor(vendo)) => {
     const old = inserts.get(mac);
     if (old) clearTimeout(old.timer);
-    const wait = admin.settings.read().main.countdownMax * 1000;
-    inserts.set(mac, { timer: setTimeout(() => endInsert(mac, portalIo), wait) });
+    inserts.set(mac, { timer: setTimeout(() => endInsert(mac, portalIo), wait), vendo });
     return wait;
   };
   admin.hooks.listenCoin = (mac) => {
     if (admin.money.blocked(mac)) return { ok: false, message: 'This device is blocked' };
-    if (coinLocked()) return { ok: false, message: 'Coin slot is temporarily locked, try again in a few minutes' };
-    const wait = admin.settings.read().main.countdownMax * 1000;
-    if (!setPendingPayer(mac, Date.now(), wait + 2000)) return { ok: false, message: 'Vendo is busy, someone else is inserting coins' };
-    armInsert(mac);
-    openCoinSlot();
+    const vendo = vendoOf(mac);
+    if (!admin.vendos.isOnline(vendo)) return { ok: false, message: 'Vendo is offline' };
+    if (coinLocked(vendo)) return { ok: false, message: 'Coin slot is temporarily locked, try again in a few minutes' };
+    const wait = waitMsFor(vendo);
+    if (!setPendingPayer(mac, Date.now(), wait + 2000, vendo)) return { ok: false, message: 'Vendo is busy, someone else is inserting coins' };
+    armInsert(mac, vendo, wait);
+    if (vendo === 'main') openCoinSlot();
     return { ok: true, countdown: wait / 1000, expiry: Date.now() + wait };
   };
   admin.hooks.stopCoin = (mac) => endInsert(mac, portalIo);
   // a coin while the popup is open goes to the device's wallet (the Done/Connect button turns it into time)
-  admin.portalCoin = (mac, pesos) => {
+  admin.portalCoin = (mac, pesos, vendo = 'main') => {
     if (!inserts.has(mac)) return false;
     admin.wallet.add(mac, pesos);
     armInsert(mac);
     admin.mainlog.write('system', `Coin: ${pesos} peso(s) added to the wallet of ${mac}`);
     admin.clientLog.write(mac, `Coin: ${pesos} peso(s) to wallet`);
-    try { admin.sales.add({ kind: 'coin', amount: pesos, mac }); } catch (e) { log('error', 'sales record failed', { error: e.message }); }
+    try { admin.sales.add({ kind: 'coin', amount: pesos, mac, vendo }); } catch (e) { log('error', 'sales record failed', { error: e.message }); }
     portalIo.pushTo(mac, PORTAL_KEYS[20], { credit: admin.wallet.balance(mac), incoin: pesos });
     return true;
   };
@@ -280,6 +296,73 @@ if (admin) {
 server.listen(portalPort, () => {
   log('info', 'portal listening', { port: server.address().port });
 });
+
+// Coin crediting lives at the top level so a sub-vendo's coins (over the poll protocol) work even when this
+// machine has no GPIO. `vendo` is 'main' (this box's own slot) or a sub-vendo id.
+const batches = new Map(); // mac -> { pesos, ms, at }: coins inserted close together are one purchase
+const vc = config.vendo;
+function creditPulse(vendo = 'main') {
+  const mac = consumePendingPayer(Date.now(), vendo);
+  if (!mac) {
+    log('warn', 'orphan coin pulse: no pending payer', { vendo });
+    return;
+  }
+  if (admin && admin.money.blocked(mac)) {
+    log('warn', 'coin from a blocked device ignored', { mac });
+    return;
+  }
+  if (admin && admin.portalCoin(mac, pulse_value_pesos, vendo)) return;
+  const cfg = admin ? admin.settings.read().main : null;
+  const t = Date.now();
+  let b = batches.get(mac);
+  if (!b || t - b.at > (cfg ? cfg.countdownMax : 15) * 1000) b = { pesos: 0, ms: 0 };
+  b.pesos += pulse_value_pesos;
+  b.at = t;
+  const total = timeForPesos(cfg ? cfg.config : { rate: [] }, b.pesos, pesos_per_minute);
+  const delta = total - b.ms;
+  b.ms = total;
+  batches.set(mac, b);
+  const existing = session.getSession(mac);
+  const fresh = !existing || (!existing.paused && existing.expiresAt <= t);
+  session.addTime(mac, delta, { price: pulse_value_pesos, ...(fresh && cfg ? profileFor(cfg.config, b.pesos) : {}) }, t);
+  if (admin) {
+    admin.mainlog.write('system', `Coin: ${pulse_value_pesos} peso(s) credited to ${mac}`);
+    admin.clientLog.write(mac, `Coin: ${pulse_value_pesos} peso(s)`);
+    try { admin.sales.add({ kind: 'coin', amount: pulse_value_pesos, mac, vendo }); } catch (e) { log('error', 'sales record failed', { error: e.message }); }
+  }
+  if (!(existing && existing.paused)) {
+    try {
+      firewall.allow(mac);
+      log('info', 'firewall allow', { mac });
+    } catch (e) {
+      log('error', 'firewall allow failed', { mac, error: e.message });
+    }
+  }
+  session.save();
+}
+
+// One coin guard per vendo. Main's onLock drives the physical relay; a sub-vendo's acceptor relay is the ESP's.
+makeGuard = (vendo) => createCoinGuard({
+  onCoin: (pulses) => { for (let i = 0; i < pulses; i++) creditPulse(vendo); },
+  hasPayer: () => hasPendingPayer(Date.now(), vendo),
+  notify: (title, message) => { try { notifications.add({ title, icon: 'mdi-alert', message }); } catch (e) { log('error', 'notification failed', { error: e.message }); } },
+  log: (text) => { const t = vendo === 'main' ? text : `${vendo}: ${text}`; log('warn', t); if (admin) admin.mainlog.write('system', t); },
+  onLock: vendo === 'main' ? (locked) => { if (locked) coinRelay(false); else if (hasMainInsert()) coinRelay(true); } : () => {},
+  // calibration for other coin acceptors: optional keys in vendo.json
+  ...(vc.coin_min_gap_ms !== undefined && { minGapMs: Number(vc.coin_min_gap_ms) }),
+  ...(vc.coin_train_gap_ms !== undefined && { trainGapMs: Number(vc.coin_train_gap_ms) }),
+  ...(vc.coin_max_pulses !== undefined && { maxPulses: Number(vc.coin_max_pulses) }),
+});
+
+// Sub-vendo poll handler: credit a vendo's coins through its guard, switch its acceptor relay when a phone holds
+// its slot, and report bad signatures to the main log.
+subApi = admin ? createSubvendoApi({
+  vendos: admin.vendos,
+  vendoKey: () => admin.settings.read().key,
+  credit: (vendo, pulses, gap) => { const g = guardOf(vendo); if (g) g.train(pulses, gap); },
+  relayOn: (vendo) => hasPendingPayer(Date.now(), vendo) && !coinLocked(vendo),
+  log: (t) => admin.mainlog.write('system', t),
+}) : null;
 
 // A missing/unwritable coin pin must not take the portal and admin down with it.
 try {
@@ -295,62 +378,9 @@ try {
     coinRelay = (on) => { try { gpio.writePin(relayPin, on ? active : 1 - active); } catch (e) { log('error', 'coin relay write failed', { pin: relayPin, error: e.message }); } };
     coinRelay(false);
   }
-  const batches = new Map(); // mac -> { pesos, ms, at }: coins inserted close together are one purchase
-  const vc = config.vendo;
-  const guard = createCoinGuard({
-    onCoin: (pulses) => { for (let i = 0; i < pulses; i++) creditPulse(); },
-    hasPayer: () => hasPendingPayer(),
-    notify: (title, message) => { try { notifications.add({ title, icon: 'mdi-alert', message }); } catch (e) { log('error', 'notification failed', { error: e.message }); } },
-    log: (text) => { log('warn', text, { pin }); if (admin) admin.mainlog.write('system', text); },
-    onLock: (locked) => { if (locked) coinRelay(false); else if (inserts.size) coinRelay(true); },
-    // calibration for other coin acceptors: optional keys in vendo.json
-    ...(vc.coin_min_gap_ms !== undefined && { minGapMs: Number(vc.coin_min_gap_ms) }),
-    ...(vc.coin_train_gap_ms !== undefined && { trainGapMs: Number(vc.coin_train_gap_ms) }),
-    ...(vc.coin_max_pulses !== undefined && { maxPulses: Number(vc.coin_max_pulses) }),
-  });
-  coinLocked = guard.isLocked;
   gpio.watchPin(pin, 'in', edge, (value) => {
-    if (value === (edge === 'falling' ? 0 : 1)) guard.pulse();
+    if (value === (edge === 'falling' ? 0 : 1)) guardOf('main').pulse();
   });
-  function creditPulse() {
-    const mac = consumePendingPayer();
-    if (!mac) {
-      log('warn', 'orphan coin pulse: no pending payer', { pin });
-      return;
-    }
-    if (admin && admin.money.blocked(mac)) {
-      log('warn', 'coin from a blocked device ignored', { mac });
-      return;
-    }
-    if (admin && admin.portalCoin(mac, pulse_value_pesos)) return;
-    const cfg = admin ? admin.settings.read().main : null;
-    const t = Date.now();
-    let b = batches.get(mac);
-    if (!b || t - b.at > (cfg ? cfg.countdownMax : 15) * 1000) b = { pesos: 0, ms: 0 };
-    b.pesos += pulse_value_pesos;
-    b.at = t;
-    const total = timeForPesos(cfg ? cfg.config : { rate: [] }, b.pesos, pesos_per_minute);
-    const delta = total - b.ms;
-    b.ms = total;
-    batches.set(mac, b);
-    const existing = session.getSession(mac);
-    const fresh = !existing || (!existing.paused && existing.expiresAt <= t);
-    session.addTime(mac, delta, { price: pulse_value_pesos, ...(fresh && cfg ? profileFor(cfg.config, b.pesos) : {}) }, t);
-    if (admin) {
-      admin.mainlog.write('system', `Coin: ${pulse_value_pesos} peso(s) credited to ${mac}`);
-      admin.clientLog.write(mac, `Coin: ${pulse_value_pesos} peso(s)`);
-      try { admin.sales.add({ kind: 'coin', amount: pulse_value_pesos, mac }); } catch (e) { log('error', 'sales record failed', { error: e.message }); }
-    }
-    if (!(existing && existing.paused)) {
-      try {
-        firewall.allow(mac);
-        log('info', 'firewall allow', { mac });
-      } catch (e) {
-        log('error', 'firewall allow failed', { mac, error: e.message });
-      }
-    }
-    session.save();
-  }
 } catch (e) {
   log('error', 'coin gpio unavailable; portal runs without coin input', { pin: coin_pin, error: e.message });
 }
