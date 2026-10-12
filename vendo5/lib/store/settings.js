@@ -12,6 +12,7 @@ function defaults({ deviceName, coinPin }) {
       config: emptyConfig(),
     },
     key: '', insertBanDuration: 3, insertBancount: 3,
+    sub: {},
     pausable: { autopause: false, autolimit: false },
     trial: { default: { enable: false } },
     redirect: '', footer: '', idkey: '',
