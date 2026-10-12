@@ -4,7 +4,16 @@ START=95
 STOP=10
 USE_PROCD=1
 
+# eth0/eth1 are only a first guess; /etc/vendo5-netdetect.sh finds the real WAN (on-board) and LAN (USB adapter)
+# ports and corrects the network config and firewall before the app starts. br-lan missing afterwards means the
+# USB LAN adapter is not plugged in: say so loudly instead of leaving a silent "obtaining IP address".
+check_wan_lan_interfaces() {
+	[ -x /etc/vendo5-netdetect.sh ] && /etc/vendo5-netdetect.sh
+	[ -e /sys/class/net/br-lan ] || logger -t vendo5 "STARTUP WARNING: br-lan does not exist - the USB LAN adapter is missing or not detected, so DHCP and the captive portal cannot work. Plug it in and reboot."
+}
+
 start_service() {
+	check_wan_lan_interfaces
 	procd_open_instance
 	procd_set_param command /usr/bin/node /opt/vendo5/main.js
 	procd_set_param respawn

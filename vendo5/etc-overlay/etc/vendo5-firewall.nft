@@ -16,17 +16,15 @@
 # plain-HTTP connectivity-check URL and pop the "sign in to network"
 # browser on their own.
 #
-# shortcut: "eth0" (WAN) below is a best-guess interface name, matching
-# etc/config/network — not yet confirmed on real hardware (the owner
-# doesn't know the USB-to-LAN adapter's exact chipset, though that
-# adapter's own port only needs to be correct in config/network, since
-# it's bridged into "br-lan" there and this file only ever refers to
-# "br-lan"). If "eth0" is wrong on the real device, it's a one-line fix
-# here and in config/network. Verify with `ip link` after boot.
+# The WAN port name is detected at boot (etc/vendo5-netdetect.sh), see the define below.
 #
 # Syntax validated with `sudo nft -c -f` against a real nft binary
 # (2026-10-10) — clean, no errors. Not yet run against a real device's
 # actual interfaces (that still needs on-hardware testing).
+
+# The WAN port's name. etc/vendo5-netdetect.sh rewrites this one line at boot if the real WAN port is not eth0;
+# every rule below (and lib/system/shaper.js, which reads it) follows it. Rules stay pinned to that one port.
+define WAN = "eth0"
 
 table inet vendo5 {
 	set allowed {
@@ -54,8 +52,8 @@ table inet vendo5 {
 		type filter hook forward priority filter; policy drop;
 		# replies to what a paid client started: without this the WAN->LAN half of every connection is dropped here
 		ct state established,related accept
-		iifname "br-lan" oifname "eth0" ether saddr @allowed accept
-		iifname "br-lan" oifname "eth0" ip daddr @walled accept
+		iifname "br-lan" oifname $WAN ether saddr @allowed accept
+		iifname "br-lan" oifname $WAN ip daddr @walled accept
 		# unpaid traffic to the portal's own app (port 3000) and to the
 		# router itself must still reach it — only gate LAN->WAN forwarding.
 		iifname "br-lan" oifname "br-lan" accept
@@ -63,6 +61,6 @@ table inet vendo5 {
 
 	chain postrouting {
 		type nat hook postrouting priority srcnat; policy accept;
-		oifname "eth0" ether saddr @allowed masquerade
+		oifname $WAN ether saddr @allowed masquerade
 	}
 }

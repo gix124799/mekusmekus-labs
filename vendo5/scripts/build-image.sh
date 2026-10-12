@@ -24,6 +24,8 @@ CMD=build/debugfs.cmd
   # OpenWrt system config + service
   for f in network dhcp firewall; do echo "rm /etc/config/$f"; echo "write etc-overlay/etc/config/$f /etc/config/$f"; done
   echo "write etc-overlay/etc/vendo5-firewall.nft /etc/vendo5-firewall.nft"
+  echo "write etc-overlay/etc/vendo5-netdetect.sh /etc/vendo5-netdetect.sh"
+  echo "set_inode_field /etc/vendo5-netdetect.sh mode 0100755"
   echo "write etc/init.d/vendo5 /etc/init.d/vendo5"
   echo "set_inode_field /etc/init.d/vendo5 mode 0100755"
   echo "symlink /etc/rc.d/S95vendo5 ../init.d/vendo5"

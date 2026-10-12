@@ -25,7 +25,7 @@ config interface 'wan'
 	option device 'eth0'
 	option proto 'dhcp'
 
-config device
+config device 'br_lan'
 	option type 'bridge'
 	option name 'br-lan'
 	list ports 'eth1'

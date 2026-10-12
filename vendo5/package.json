@@ -12,6 +12,7 @@
     "socket.io-stream": "0.9.1"
   },
   "devDependencies": {
+    "javascript-obfuscator": "^5.9.0",
     "socket.io-client": "4.7.5"
   }
 }

@@ -73,7 +73,9 @@ function createNavHandlers({ pppoe, sessions, firewall, arp, stats, passthrough,
 
     '@nav-232003': guarded({}, () => {
       const l = licence.licence();
-      return { status: 'activated', code: l.serial, level: 'Unlimited', hotspot: l.hotspot, pppoe: l.pppoe, vendo: 'Yes', eload: 'Yes', movie: l.movie ? 'Yes' : 'No', serial: l.serial, expiration: l.expiration };
+      // eload is 'No' here (not a licence field - purchases are genuinely refused, cloud-only by design; this
+      // just stops the dialog claiming a working feature that isn't). Everything else stays unconditionally on.
+      return { status: 'activated', code: l.serial, level: 'Unlimited', hotspot: l.hotspot, pppoe: l.pppoe, vendo: 'Yes', eload: 'No', movie: l.movie ? 'Yes' : 'No', serial: l.serial, expiration: l.expiration };
     }),
     '@nav-1452357': guarded('', () => Buffer.from(licence.licence().serial).toString('base64')),
     '@nav-14433223': guarded({}, () => ({ success: false, message: 'This device runs offline: no activation is needed' })),

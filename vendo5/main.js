@@ -318,7 +318,8 @@ try {
 
 // Speed limits and data caps (nft `bwlimit` chain); a device over its cap loses its session.
 if (admin) {
-  const shaper = createShaper({ runCommand, sessions: session, arp, file: path.join(stateDir, 'limits.nft'), save: () => session.save(), log,
+  const wan = (() => { try { return /^define WAN = "([\w.-]+)"/m.exec(require('node:fs').readFileSync(process.env.VENDO5_NFT || '/etc/vendo5-firewall.nft', 'utf8'))[1]; } catch { return 'eth0'; } })(); // the boot-time detector's answer
+  const shaper = createShaper({ runCommand, wan, sessions: session, arp, file: path.join(stateDir, 'limits.nft'), save: () => session.save(), log,
     onCap: (mac) => { admin.money.endSession(mac); admin.mainlog.write('system', `Data cap reached: session of ${mac} ended`); admin.clientLog.write(mac, 'Data cap reached'); } });
   setInterval(() => { try { shaper.tick(); } catch (e) { log('error', 'bandwidth limit pass failed', { error: e.message }); } }, 2000).unref();
 }
