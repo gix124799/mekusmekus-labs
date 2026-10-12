@@ -3,20 +3,21 @@ const assert = require('node:assert');
 const { createWatchdog } = require('../lib/system/watchdog');
 
 function rig({ online = true, lan = true, notifyThrows = false } = {}) {
-  const st = { online, lan, t: 1000000, ran: [], notes: [], lines: [], allowed: [], frozen: 0, thawMacs: [], saves: 0 };
+  const st = { online, icmp: true, frozenAt: null, revoked: [], lan, t: 1000000, ran: [], notes: [], lines: [], allowed: [], frozen: 0, thawMacs: [], saves: 0 };
   const sessions = {
-    freeze: () => { st.frozen++; return ['m1', 'm2']; },
+    freeze: (t) => { st.frozen++; st.frozenAt = t; return ['m1', 'm2']; },
     thaw: () => { const m = st.thawMacs; st.thawMacs = []; return m; },
   };
   const wd = createWatchdog({
     exec: async (argv) => {
       st.ran.push(argv.join(' '));
-      if (argv[0] === 'ping' && !st.online) throw new Error('100% packet loss');
+      if (argv[0] === 'ping' && !(st.online && st.icmp)) throw new Error('100% packet loss');
+      if (argv[0] === 'wget' && !st.online) throw new Error('timed out');
       return '';
     },
     linkExists: () => st.lan,
     sessions,
-    firewall: { allow: (m) => st.allowed.push(m) },
+    firewall: { allow: (m) => st.allowed.push(m), revoke: (m) => st.revoked.push(m) },
     notifications: { add: (n) => { if (notifyThrows) throw new Error('disk full'); st.notes.push(n.title); } },
     mainlog: { write: (c, x) => st.lines.push(x) },
     save: () => { st.saves++; },
@@ -106,4 +107,26 @@ test('a failing notification store does not stop freeze or thaw', async () => {
   await tick();
   assert.equal(st.frozen, 1);
   assert.deepEqual(st.allowed, ['m1']);
+});
+
+test('ICMP blocked but the web works: not an outage, nobody frozen, no ifup', async () => {
+  const { st, tick } = rig();
+  st.icmp = false;
+  for (let i = 0; i < 5; i++) await tick();
+  assert.equal(st.frozen, 0);
+  assert.equal(ifups(st, 'wan'), 0);
+});
+
+test('freezing revokes the clients, so a wrong outage call never means free unmetered internet', async () => {
+  const { st, tick } = rig({ online: false });
+  await tick(); await tick(); await tick();
+  assert.deepEqual(st.revoked, ['m1', 'm2']);
+});
+
+test('time is frozen from the first failed check, not the third', async () => {
+  const { st, tick } = rig({ online: false });
+  await tick();
+  const firstFail = st.t;
+  await tick(); await tick();
+  assert.equal(st.frozenAt, firstFail);
 });

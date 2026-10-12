@@ -183,14 +183,17 @@ test('freeze stops the clock of running sessions; thaw resumes only those', () =
   assert.deepEqual(s.thaw(700000), [], 'thaw with nothing frozen is a no-op');
 });
 
-test('a customer resume during the outage clears the outage mark', () => {
+test('an outage-frozen session cannot be resumed by hand (no internet to use it on)', () => {
   const s = createSessionStore(tmpFile());
   s.load();
   s.addTime('m1', 60000, {}, 0);
   s.freeze(10000);
-  assert.equal(s.resume('m1', 20000).ok, true);
-  assert.equal(s.getSession('m1').outage, undefined);
-  assert.deepEqual(s.thaw(30000), []);
+  const r = s.resume('m1', 20000);
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /No internet/);
+  assert.equal(s.getSession('m1').paused, true);
+  assert.deepEqual(s.thaw(30000), ['m1']);
+  assert.equal(s.getSession('m1').expiresAt, 30000 + 50000);
 });
 
 test('frozen sessions survive a save and load', () => {

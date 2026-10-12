@@ -3,12 +3,15 @@
 // would delay coin-pulse reads. App crashes (procd respawn) and kernel hangs (hardware watchdog) are not
 // handled here.
 const WAN_HOSTS = ['1.1.1.1', '8.8.8.8'];
+// some ISPs and LTE modems drop ICMP: a web check must fail too before the internet counts as down
+const WEB_CHECK = ['wget', '-q', '-T', '3', '--spider', 'http://connectivitycheck.gstatic.com/generate_204'];
 const FAILS_TO_DOWN = 3;
 const WAN_RETRY_MS = 10 * 60000;
 const LAN_RETRY_MS = 5 * 60000;
 
 function createWatchdog({ exec, linkExists, sessions, firewall, notifications, mainlog, save = () => {}, now = Date.now }) {
   let fails = 0;
+  let firstFailAt = null;
   let outageSince = null;
   let lastWanTry = 0;
   let notifiedDown = false;
@@ -29,7 +32,7 @@ function createWatchdog({ exec, linkExists, sessions, firewall, notifications, m
     for (const host of WAN_HOSTS) {
       try { await exec(['ping', '-c', '1', '-W', '2', host]); return true; } catch { /* try the next host */ }
     }
-    return false;
+    try { await exec(WEB_CHECK); return true; } catch { return false; }
   }
 
   async function checkLan() {
@@ -74,12 +77,17 @@ function createWatchdog({ exec, linkExists, sessions, firewall, notifications, m
       return;
     }
     fails += 1;
+    if (fails === 1) firstFailAt = t;
     if (outageSince === null) {
       if (fails < FAILS_TO_DOWN) return;
-      outageSince = t;
+      outageSince = firstFailAt;
       lastWanTry = t;
       notifiedDown = false;
-      const frozen = sessions.freeze(t);
+      const frozen = sessions.freeze(firstFailAt); // clients are not charged for the checks it took to be sure
+      // like a customer pause: blocked while frozen, so a wrong outage call never means free unmetered access
+      for (const mac of frozen) {
+        try { firewall.revoke(mac); } catch (e) { log(`Watchdog: firewall revoke ${mac} failed: ${e.message}`); }
+      }
       save();
       log(`Watchdog: internet down, time frozen for ${frozen.length} clients, restarting wan`);
       await run(['ifup', 'wan']);

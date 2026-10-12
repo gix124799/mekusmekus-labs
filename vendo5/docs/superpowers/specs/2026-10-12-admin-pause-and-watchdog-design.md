@@ -31,7 +31,9 @@ New `lib/system/watchdog.js`, `createWatchdog({ exec, linkExists, sessions, fire
 now })` (`exec(argv) -> Promise`, rejects on failure), with a `tick()` that `main.js` calls every 30 s (setInterval, `.unref()`, try/catch
 like the shaper).
 
-**WAN check.** `ping` 1.1.1.1 then 8.8.8.8 (one packet, 2 s timeout each, argv not shell). Down = both fail.
+**WAN check.** `ping` 1.1.1.1 then 8.8.8.8 (one packet, 2 s timeout each, argv not shell), then an HTTP check
+(`wget --spider` generate_204), since some ISPs drop ICMP. Down = all three fail. Time is frozen from the
+first failed check, not the third.
 
 | Consecutive failed ticks | Action |
 |---|---|
@@ -47,10 +49,11 @@ like the shaper).
   portal already shows them as "Paused" with a frozen countdown. `pauselimit` is not touched.
 - `thaw` resumes only `outage` sessions and returns their MACs; the watchdog calls `firewall.allow` for each
   (idempotent nft add), because boot-time `syncFromSessions` skips paused sessions.
-- Firewall is not revoked on freeze: clients stay allowed, there is just no internet behind it.
+- Freeze revokes each frozen client (like a customer pause), so a wrongly detected outage never gives free,
+  unmetered access; thaw re-allows them.
 - Restart during an outage needs no extra state file: the `outage` sessions are on disk, and the first
   successful ping after start thaws them.
-- A customer who resumes by hand during the outage gets a normal running session (their choice).
+- A frozen session cannot be resumed by hand (portal or admin): "No internet right now, your time is saved".
 - shortcut: a brand-new session started during an outage (coins inserted while offline) is not frozen;
   freeze it too if that happens in practice.
 - Voucher `validityEnd` is calendar time and still applies.

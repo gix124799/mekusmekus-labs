@@ -106,10 +106,10 @@ function createSessionStore(filePath) {
   function resume(mac, now = Date.now()) {
     const s = sessions[mac];
     if (!s || !s.paused || !live(s, now)) return { ok: false, reason: 'Not paused' };
+    if (s.outage) return { ok: false, reason: 'No internet right now, your time is saved' }; // the watchdog thaws it
     s.expiresAt = now + s.remainingMs;
     delete s.paused;
     delete s.remainingMs;
-    delete s.outage;
     return { ok: true, session: s };
   }
 
