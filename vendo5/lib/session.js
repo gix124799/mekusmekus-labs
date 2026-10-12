@@ -1,4 +1,9 @@
 const fs = require('node:fs');
+const crypto = require('node:crypto');
+
+// A code the customer can type on a phone that changed its MAC: no 0/O/1/I to misread.
+const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const newCode = () => Array.from({ length: 8 }, () => ALPHABET[crypto.randomInt(ALPHABET.length)]).join('');
 
 function createSessionStore(filePath) {
   let sessions = {}; // mac -> { mac, creditPesos, expiresAt, startedAt }
@@ -18,7 +23,9 @@ function createSessionStore(filePath) {
       return; // corrupt file: start empty, not an error
     }
     for (const [mac, sess] of Object.entries(parsed)) {
-      if (live(sess, now)) sessions[mac] = sess;
+      if (!live(sess, now)) continue;
+      if (!sess.resumeCode) sess.resumeCode = newCode(); // saved before resume codes existed
+      sessions[mac] = sess;
     }
   }
 
@@ -51,7 +58,7 @@ function createSessionStore(filePath) {
       existing.creditPesos += pesos;
       existing.expiresAt += minutes * 60000;
     } else {
-      sessions[mac] = { mac, creditPesos: pesos, expiresAt: now + minutes * 60000, startedAt: now };
+      sessions[mac] = { mac, creditPesos: pesos, expiresAt: now + minutes * 60000, startedAt: now, resumeCode: newCode() };
     }
     return sessions[mac];
   }
@@ -79,7 +86,7 @@ function createSessionStore(filePath) {
   function addTime(mac, ms, meta = {}, now = Date.now()) {
     const cur = sessions[mac];
     const fresh = !cur || !live(cur, now);
-    const s = fresh ? { mac, creditPesos: 0, expiresAt: now, startedAt: now, type: meta.type || 'consumable' } : cur;
+    const s = fresh ? { mac, creditPesos: 0, expiresAt: now, startedAt: now, type: meta.type || 'consumable', resumeCode: newCode() } : cur;
     if (s.paused) s.remainingMs += ms;
     else s.expiresAt = (fresh ? now : s.expiresAt) + ms;
     s.creditPesos += meta.price || 0;
@@ -139,6 +146,24 @@ function createSessionStore(filePath) {
     return macs;
   }
 
+  // The live session a resume code (or the voucher code it runs) belongs to.
+  function findByCode(code, now = Date.now()) {
+    for (const [mac, s] of Object.entries(sessions)) {
+      if (live(s, now) && (s.resumeCode === code || s.code === code)) return mac;
+    }
+    return null;
+  }
+
+  // A phone that came back with a new MAC: the whole session goes with it.
+  function move(from, to, now = Date.now()) {
+    const s = sessions[from];
+    if (from === to || !s || !live(s, now)) return false;
+    if (sessions[to] && live(sessions[to], now)) return false;
+    sessions[to] = { ...s, mac: to };
+    delete sessions[from];
+    return true;
+  }
+
   // Undo helper for a failed firewall call: put a session back exactly as it was (null removes it).
   function restore(mac, snapshot) {
     if (snapshot) sessions[mac] = snapshot;
@@ -155,7 +180,7 @@ function createSessionStore(filePath) {
     return { ...sessions };
   }
 
-  return { load, save, addCredit, addTime, pause, resume, freeze, thaw, restore, extend, getSession, isActive, expireDue, revoke, all };
+  return { load, save, addCredit, addTime, pause, resume, freeze, thaw, findByCode, move, restore, extend, getSession, isActive, expireDue, revoke, all };
 }
 
 module.exports = { createSessionStore };

@@ -208,3 +208,64 @@ test('frozen sessions survive a save and load', () => {
   assert.deepEqual(b.thaw(1000000), ['m1']);
   assert.equal(b.getSession('m1').expiresAt, 1000000 + 50000);
 });
+
+const CODE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/;
+
+test('every fresh session gets a resume code; topping up keeps it', () => {
+  const s = createSessionStore(tmpFile());
+  s.load();
+  s.addCredit('m1', 1, 1, 0);
+  const code = s.getSession('m1').resumeCode;
+  assert.match(code, CODE);
+  s.addCredit('m1', 1, 1, 1000);
+  assert.equal(s.getSession('m1').resumeCode, code);
+  s.addTime('m2', 60000, { code: 'VOUCH1' }, 0);
+  assert.match(s.getSession('m2').resumeCode, CODE);
+  assert.notEqual(s.getSession('m2').resumeCode, code);
+});
+
+test('sessions saved before resume codes existed get one on load', () => {
+  const f = tmpFile();
+  fs.writeFileSync(f, JSON.stringify({ m1: { mac: 'm1', creditPesos: 1, expiresAt: 9e15, startedAt: 0 } }));
+  const s = createSessionStore(f);
+  s.load(1000);
+  assert.match(s.getSession('m1').resumeCode, CODE);
+});
+
+test('findByCode finds a live session by resume code or voucher code, not an expired one', () => {
+  const s = createSessionStore(tmpFile());
+  s.load();
+  s.addTime('m1', 60000, { code: 'VOUCH1' }, 0);
+  const rc = s.getSession('m1').resumeCode;
+  assert.equal(s.findByCode(rc, 1000), 'm1');
+  assert.equal(s.findByCode('VOUCH1', 1000), 'm1');
+  assert.equal(s.findByCode('NOPE2345', 1000), null);
+  assert.equal(s.findByCode(rc, 61000), null, 'expired');
+});
+
+test('move carries the whole session to the new MAC', () => {
+  const s = createSessionStore(tmpFile());
+  s.load();
+  s.addTime('old', 60000, { upload: '1M' }, 0);
+  s.pause('old', 10000, { force: true });
+  const before = s.getSession('old');
+  assert.equal(s.move('old', 'new', 20000), true);
+  assert.equal(s.getSession('old'), undefined);
+  const now = s.getSession('new');
+  assert.equal(now.mac, 'new');
+  assert.equal(now.remainingMs, 50000);
+  assert.equal(now.paused, true);
+  assert.equal(now.upload, '1M');
+  assert.equal(now.resumeCode, before.resumeCode);
+});
+
+test('move refuses when the source is not live or the target already has time', () => {
+  const s = createSessionStore(tmpFile());
+  s.load();
+  assert.equal(s.move('ghost', 'new', 0), false);
+  s.addTime('a', 60000, {}, 0);
+  s.addTime('b', 60000, {}, 0);
+  assert.equal(s.move('a', 'b', 1000), false);
+  assert.equal(s.move('a', 'a', 1000), false);
+  assert.equal(s.move('a', 'c', 61000), false, 'expired');
+});
