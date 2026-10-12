@@ -208,7 +208,7 @@ try {
     }),
   };
   const hooks = { stopCoin: () => {}, listenCoin: () => ({ ok: false, message: 'Not ready' }), pushTo: () => {} }; // set once the sockets exist
-  const ops = createPortalOps({ sessions: session, firewall, clients, credits, sales, settings, access, mainlog, clientLog, save: () => session.save() });
+  const ops = createPortalOps({ sessions: session, firewall, clients, credits, sales, settings, access, mainlog, clientLog, save: () => session.save(), trialMaxPerHour: Number(config.vendo.trial_max_per_hour ?? 10) });
   const wallet = createWallet({ clients, sessions: session, firewall, settings, ratePesosPerMinute: () => pesos_per_minute, access, mainlog, clientLog, save: () => session.save() });
   const portalPages = createPortalPages({ root: uiDir, version, hostname: deviceName, keys: PORTAL_KEYS, hide: () => ({}),
     theme: () => settings.read().portalTheme.set || 'defualt-theme', redirect: () => settings.read().redirect, custom: () => { const t = settings.read().portalTheme; return t.enable ? t.script : ''; },
