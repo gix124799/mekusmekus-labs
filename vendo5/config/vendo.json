@@ -1,1 +1,1 @@
-{ "coin_pin": 17, "pulse_value_pesos": 1, "pesos_per_minute": 1 }
+{ "coin_pin": 17, "pulse_value_pesos": 1, "pesos_per_minute": 1, "coin_min_gap_ms": 20, "coin_train_gap_ms": 300, "coin_max_pulses": 20 }

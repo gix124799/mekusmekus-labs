@@ -19,7 +19,8 @@ async function boot(settings) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v5pw-'));
   const gpio = path.join(root, 'gpio');
   fs.mkdirSync(path.join(gpio, 'gpio17'), { recursive: true });
-  for (const f of ['export', 'unexport', 'gpio17/value', 'gpio17/direction', 'gpio17/edge']) fs.writeFileSync(path.join(gpio, f), '0');
+  fs.mkdirSync(path.join(gpio, 'gpio18'), { recursive: true });
+  for (const f of ['export', 'unexport', 'gpio17/value', 'gpio17/direction', 'gpio17/edge', 'gpio18/direction']) fs.writeFileSync(path.join(gpio, f), '0');
   if (settings) { fs.mkdirSync(path.join(root, 'state'), { recursive: true }); fs.writeFileSync(path.join(root, 'state', 'settings.json'), JSON.stringify(settings)); }
   const p = spawn(process.execPath, [MAIN], { env: { ...process.env, VENDO5_CONFIG_DIR: path.join(root, 'cfg'), VENDO5_DEFAULTS_DIR: path.join(__dirname, '..', 'config'), VENDO5_SESSION_FILE: path.join(root, 's.json'), VENDO5_STATE_DIR: path.join(root, 'state'), VENDO5_UI_DIR: UI, VENDO5_GPIO_BASE: gpio, VENDO5_PORTAL_PORT: '0', VENDO5_FIREWALL_CMD: 'noop', VENDO5_ARP_FAKE_MAC: MAC } });
   let out = '';
@@ -63,6 +64,22 @@ test('portal page, theme files, coins into the wallet, then Connect', async () =
     assert.equal(await ask(c, K(4)), 'Disconnected');
     assert.equal((await ask(c, K(2))).status, 'Disconnected');
     assert.equal(await ask(c, K(5)), 'Connected');
+  } finally { c.close(); s.stop(); }
+});
+
+test('coin acceptor relay: off at start, on while the coin popup is open, off a moment after it closes', async () => {
+  const s = await boot({ main: { pins: { relay: 18 }, relaypinactive: 1, coinsBlockerDelay: 300 } });
+  const relay = () => fs.readFileSync(path.join(s.gpio, 'gpio18', 'direction'), 'utf8');
+  const c = connect(`http://127.0.0.1:${s.port}`, { reconnection: false });
+  try {
+    await new Promise((r) => c.on('connect', r));
+    assert.equal(relay(), 'low');
+    assert.equal((await ask(c, K(13), {})).message, 'Insert');
+    assert.equal(relay(), 'high');
+    assert.equal((await ask(c, K(13), { type: 0 })).message, 'Closed');
+    assert.equal(relay(), 'high', 'a coin already falling is still counted');
+    await sleep(500);
+    assert.equal(relay(), 'low');
   } finally { c.close(); s.stop(); }
 });
 

@@ -15,6 +15,7 @@ const { createLicence } = require('./lib/licence');
 const { createMainLog } = require('./lib/system/mainlog');
 const { createStats } = require('./lib/system/stats');
 const { createWatchdog } = require('./lib/system/watchdog');
+const { createCoinGuard } = require('./lib/coinguard');
 const { createSessions } = require('./lib/wire/session');
 const { createMainHandlers } = require('./lib/wire/main');
 const { createNavHandlers } = require('./lib/wire/nav');
@@ -226,10 +227,21 @@ try {
   log('error', 'admin page unavailable; the portal runs without it', { error: e.message });
 }
 
-const { server, consumePendingPayer, setPendingPayer } = createServer({ session, arp, ratePesosPerMinute: pesos_per_minute, adminRoutes: admin && admin.routes, money: admin && admin.money, chat: admin && admin.chatApi,
+const { server, consumePendingPayer, setPendingPayer, hasPendingPayer } = createServer({ session, arp, ratePesosPerMinute: pesos_per_minute, adminRoutes: admin && admin.routes, money: admin && admin.money, chat: admin && admin.chatApi,
   portal: admin && { render: (p) => admin.portalPages.render(p), themeDir: () => admin.portalPages.themeDir(), serveStatic: admin.serveStatic } });
 const inserts = new Map(); // mac -> { timer }: devices with the portal's coin popup open
-const endInsert = (mac, io) => { const i = inserts.get(mac); if (!i) return; clearTimeout(i.timer); inserts.delete(mac); io.pushTo(mac, PORTAL_KEYS[21], { done: true, countdown: 0, countdownMax: 0, type: 'info', message: '' }); };
+// Coin acceptor power (relay pin from Pin Setup): on while a coin popup is open and the slot is not locked,
+// off coinsBlockerDelay ms after the last popup closes so a coin already falling is still counted.
+let coinRelay = () => {}; // set once the gpio is up and a relay pin is configured
+let coinLocked = () => false;
+let relayOffTimer = null;
+const openCoinSlot = () => { clearTimeout(relayOffTimer); if (!coinLocked()) coinRelay(true); };
+const closeCoinSlotSoon = () => {
+  clearTimeout(relayOffTimer);
+  const delay = admin ? Number(admin.settings.read().main.coinsBlockerDelay) || 0 : 0;
+  relayOffTimer = setTimeout(() => { if (!inserts.size) coinRelay(false); }, delay);
+};
+const endInsert = (mac, io) => { const i = inserts.get(mac); if (!i) return; clearTimeout(i.timer); inserts.delete(mac); if (!inserts.size) closeCoinSlotSoon(); io.pushTo(mac, PORTAL_KEYS[21], { done: true, countdown: 0, countdownMax: 0, type: 'info', message: '' }); };
 if (admin) {
   const adminIo = attachWire(server, { events: admin.events, sessions: admin.sessions, log });
   admin.setPush((ev, payload) => adminIo.pushAuthed(ev, payload));
@@ -243,9 +255,11 @@ if (admin) {
   };
   admin.hooks.listenCoin = (mac) => {
     if (admin.money.blocked(mac)) return { ok: false, message: 'This device is blocked' };
+    if (coinLocked()) return { ok: false, message: 'Coin slot is temporarily locked, try again in a few minutes' };
     const wait = admin.settings.read().main.countdownMax * 1000;
     if (!setPendingPayer(mac, Date.now(), wait + 2000)) return { ok: false, message: 'Vendo is busy, someone else is inserting coins' };
     armInsert(mac);
+    openCoinSlot();
     return { ok: true, countdown: wait / 1000, expiry: Date.now() + wait };
   };
   admin.hooks.stopCoin = (mac) => endInsert(mac, portalIo);
@@ -274,9 +288,31 @@ try {
   const pin = live ? Number(live.pins.incoin) || coin_pin : coin_pin;
   const edge = live && ['rising', 'falling', 'both'].includes(live.edge) ? live.edge : 'rising';
   gpio.exportPin(pin);
+  const relayPin = live && String(live.pins.relay ?? '') !== '' ? Number(live.pins.relay) : NaN;
+  if (Number.isInteger(relayPin) && relayPin >= 0) {
+    const active = Number(live.relaypinactive) === 0 ? 0 : 1;
+    gpio.exportPin(relayPin);
+    coinRelay = (on) => { try { gpio.writePin(relayPin, on ? active : 1 - active); } catch (e) { log('error', 'coin relay write failed', { pin: relayPin, error: e.message }); } };
+    coinRelay(false);
+  }
   const batches = new Map(); // mac -> { pesos, ms, at }: coins inserted close together are one purchase
+  const vc = config.vendo;
+  const guard = createCoinGuard({
+    onCoin: (pulses) => { for (let i = 0; i < pulses; i++) creditPulse(); },
+    hasPayer: () => hasPendingPayer(),
+    notify: (title, message) => { try { notifications.add({ title, icon: 'mdi-alert', message }); } catch (e) { log('error', 'notification failed', { error: e.message }); } },
+    log: (text) => { log('warn', text, { pin }); if (admin) admin.mainlog.write('system', text); },
+    onLock: (locked) => { if (locked) coinRelay(false); else if (inserts.size) coinRelay(true); },
+    // calibration for other coin acceptors: optional keys in vendo.json
+    ...(vc.coin_min_gap_ms !== undefined && { minGapMs: Number(vc.coin_min_gap_ms) }),
+    ...(vc.coin_train_gap_ms !== undefined && { trainGapMs: Number(vc.coin_train_gap_ms) }),
+    ...(vc.coin_max_pulses !== undefined && { maxPulses: Number(vc.coin_max_pulses) }),
+  });
+  coinLocked = guard.isLocked;
   gpio.watchPin(pin, 'in', edge, (value) => {
-    if (value !== (edge === 'falling' ? 0 : 1)) return;
+    if (value === (edge === 'falling' ? 0 : 1)) guard.pulse();
+  });
+  function creditPulse() {
     const mac = consumePendingPayer();
     if (!mac) {
       log('warn', 'orphan coin pulse: no pending payer', { pin });
@@ -314,7 +350,7 @@ try {
       }
     }
     session.save();
-  });
+  }
 } catch (e) {
   log('error', 'coin gpio unavailable; portal runs without coin input', { pin: coin_pin, error: e.message });
 }

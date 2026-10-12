@@ -162,6 +162,9 @@ function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, ch
     return mac;
   }
 
+  // Is someone waiting to pay? A look only: the window is not refreshed.
+  const hasPendingPayer = (now = Date.now()) => !!pendingPayer && now - pendingPayer.at <= pendingPayer.ttl;
+
   // A different MAC may not steal an already-active pending-payer slot;
   // the same MAC always refreshes its own window.
   function setPendingPayer(mac, now = Date.now(), ttl = PAY_INTENT_TTL_MS) {
@@ -253,7 +256,7 @@ function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, ch
     res.end(clientPage());
   });
 
-  return { server, consumePendingPayer, setPendingPayer };
+  return { server, consumePendingPayer, setPendingPayer, hasPendingPayer };
 }
 
 module.exports = { createServer };

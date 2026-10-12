@@ -194,3 +194,11 @@ test('with no admin routes configured the portal still answers (admin unavailabl
   assert.match(r.body, /client-insert-coin/);
   server.close();
 });
+
+test('hasPendingPayer looks without refreshing the window', () => {
+  const { hasPendingPayer, setPendingPayer } = createServer({ session: fakeSession(false), arp: fakeArp('m1'), ratePesosPerMinute: 1 });
+  assert.equal(hasPendingPayer(1000), false);
+  setPendingPayer('m1', 1000, 5000);
+  assert.equal(hasPendingPayer(5000), true);
+  assert.equal(hasPendingPayer(6001), false, 'peeking at 5000 did not extend the 5 s window');
+});

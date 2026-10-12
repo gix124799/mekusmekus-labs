@@ -30,6 +30,9 @@ function createGpio(base = '/sys/class/gpio', fs = nodeFs) {
     }
   };
 
+  // "high"/"low" to direction makes the pin an output at that level in one step, without a glitch
+  const writePin = (pin, value) => write(path.join(pinDir(check(pin)), 'direction'), value ? 'high' : 'low', pin);
+
   function watchPin(pin, direction, edge, callback) {
     check(pin);
     const dir = pinDir(pin);
@@ -53,7 +56,7 @@ function createGpio(base = '/sys/class/gpio', fs = nodeFs) {
     return stop;
   }
 
-  return { exportPin, unexportPin, readPin, watchPin };
+  return { exportPin, unexportPin, readPin, writePin, watchPin };
 }
 
 module.exports = { createGpio };

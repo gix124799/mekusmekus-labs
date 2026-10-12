@@ -73,3 +73,14 @@ test('watchPin sets direction/edge and fires callback on change; stop unwatches'
   await new Promise((r) => setTimeout(r, 100));
   assert.equal(seen.length, n);
 });
+
+test('writePin sets the pin as an output at the given level in one write (no glitch)', () => {
+  const base = fakeBase();
+  const d = makePin(base, 6);
+  const g = createGpio(base);
+  g.writePin(6, 1);
+  assert.equal(fs.readFileSync(path.join(d, 'direction'), 'utf8'), 'high');
+  g.writePin(6, 0);
+  assert.equal(fs.readFileSync(path.join(d, 'direction'), 'utf8'), 'low');
+  assert.throws(() => g.writePin(-1, 1), /invalid pin/);
+});
