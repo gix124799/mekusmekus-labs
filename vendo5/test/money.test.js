@@ -34,7 +34,12 @@ test('redeeming a voucher gives time, allows the MAC, consumes the code, records
   assert.equal(r.vouchers.get(v.code), null);
   assert.deepEqual(r.sales.all().map((s) => [s.kind, s.amount, s.mac, s.code, s.owner]), [['voucher', 10, 'm1', v.code, 'Juan']]);
   assert.match(r.lines[0], /^voucher\|Voucher .* used by m1: 600s$/);
-  assert.equal(r.money.redeemVoucher('m2', v.code).message, 'Invalid voucher', 'a used code is gone');
+  const left = r.sessions.getSession('m1').expiresAt;
+  assert.equal(r.money.redeemVoucher('m2', v.code).ok, true, 'a used code only moves its running session (MAC change)');
+  assert.equal(r.sessions.getSession('m2').expiresAt, left, 'no new time');
+  assert.equal(r.sales.all().length, 1, 'no second sale');
+  r.tick(600000);
+  assert.equal(r.money.redeemVoucher('m3', v.code).message, 'Invalid voucher', 'once its time is over the code is gone');
 });
 
 test('a second voucher on a live session adds time and keeps one sale each', () => {
@@ -137,4 +142,63 @@ test('adminPause pauses a consumable session without spending pauses; resume und
   bad.money.redeemVoucher('m1', bad.make().code);
   assert.equal(bad.money.adminPause('m1').ok, false);
   assert.equal(bad.sessions.getSession('m1').paused, undefined, 'a failed revoke leaves the session running');
+});
+
+test('a resume code moves the time to the new MAC: old revoked, new allowed, logged', () => {
+  const r = rig();
+  r.money.redeemVoucher('aa:aa:aa:aa:aa:01', r.make().code);
+  const code = r.sessions.getSession('aa:aa:aa:aa:aa:01').resumeCode;
+  r.tick(60000);
+  r.calls.length = 0;
+  assert.deepEqual(r.money.redeemVoucher('aa:aa:aa:aa:aa:02', code.toLowerCase()), { ok: true, message: 'Success' });
+  assert.equal(r.sessions.getSession('aa:aa:aa:aa:aa:01'), undefined);
+  assert.equal(r.sessions.getSession('aa:aa:aa:aa:aa:02').expiresAt, r.now() + 540000);
+  assert.deepEqual(r.calls.filter((c) => c[0] !== 'save'), [['allow', 'aa:aa:aa:aa:aa:02'], ['revoke', 'aa:aa:aa:aa:aa:01']]);
+  assert.ok(r.lines.some((l) => /Session moved from aa:aa:aa:aa:aa:01 to aa:aa:aa:aa:aa:02/.test(l)));
+});
+
+test('the used voucher code also brings the session along', () => {
+  const r = rig();
+  const v = r.make();
+  r.money.redeemVoucher('m1', v.code);
+  assert.equal(r.money.redeemVoucher('m2', v.code).ok, true);
+  assert.ok(r.sessions.getSession('m2'));
+});
+
+test('a move is refused when the new device already has time, or it is the same device', () => {
+  const r = rig();
+  r.money.redeemVoucher('m1', r.make().code);
+  r.money.redeemVoucher('m2', r.make().code);
+  const code = r.sessions.getSession('m1').resumeCode;
+  assert.equal(r.money.redeemVoucher('m2', code).message, 'This device already has time');
+  assert.equal(r.money.redeemVoucher('m1', code).message, 'This code is already running on this device');
+  assert.ok(r.sessions.getSession('m1'));
+});
+
+test('a paused or disconnected session moves without being let through', () => {
+  const r = rig();
+  r.money.redeemVoucher('m1', r.make().code);
+  r.money.adminPause('m1');
+  r.calls.length = 0;
+  assert.equal(r.money.redeemVoucher('m2', r.sessions.getSession('m1').resumeCode).ok, true);
+  assert.equal(r.calls.filter((c) => c[0] === 'allow').length, 0);
+  assert.equal(r.sessions.getSession('m2').paused, true);
+  r.money.redeemVoucher('m3', r.make().code);
+  r.sessions.getSession('m3').disconnected = true;
+  r.calls.length = 0;
+  assert.equal(r.money.redeemVoucher('m4', r.sessions.getSession('m3').resumeCode).ok, true);
+  assert.equal(r.calls.filter((c) => c[0] === 'allow').length, 0);
+});
+
+test('if the new MAC cannot be allowed, the session stays on the old one', () => {
+  const r = rig();
+  r.money.redeemVoucher('m1', r.make().code);
+  const code = r.sessions.getSession('m1').resumeCode;
+  const bad = rig({ allowThrows: true });
+  bad.sessions.addTime('m1', 60000, {}, bad.now());
+  const code2 = bad.sessions.getSession('m1').resumeCode;
+  assert.equal(bad.money.redeemVoucher('m2', code2).message, 'Could not connect you, try again');
+  assert.ok(bad.sessions.getSession('m1'));
+  assert.equal(bad.sessions.getSession('m2'), undefined);
+  assert.ok(code);
 });

@@ -30,6 +30,7 @@ function createMoney({ vouchers, credits, access, clientLog, ratePesosPerMinute 
     const wellFormed = /^[A-Z0-9]{3,32}$/.test(code);
     const v = wellFormed ? vouchers.get(code) : null;
     if (!v && wellFormed && credits && credits.get(code)) return redeemCredit(mac, credits.get(code));
+    if (!v && wellFormed) { const moved = moveSession(mac, code); if (moved) return moved; }
     if (!v) {
       miss(mac);
       log(`Invalid voucher ${code.slice(0, 32)} from ${mac}`);
@@ -93,6 +94,32 @@ function createMoney({ vouchers, credits, access, clientLog, ratePesosPerMinute 
     save();
     log(`Credit code ${c.code} used by ${mac}: ${c.amount} peso(s)`);
     clog(mac, `Credit code ${c.code} used: ${c.amount} peso(s)`);
+    wrong.delete(mac);
+    return { ok: true, message: 'Success' };
+  }
+
+  // A phone that changed its MAC (random MAC): its resume code, or the voucher code it ran, takes the time along.
+  // null when the code belongs to no live session (then it is just a wrong code).
+  function moveSession(mac, code) {
+    const t = now();
+    const from = sessions.findByCode(code, t);
+    if (!from) return null;
+    if (from === mac) return { ok: false, message: 'This code is already running on this device' };
+    if (!sessions.move(from, mac, t)) return { ok: false, message: 'This device already has time' };
+    const s = sessions.getSession(mac);
+    if (!s.paused && !s.disconnected) {
+      try {
+        firewall.allow(mac);
+      } catch (e) {
+        sessions.move(mac, from, t);
+        log(`Firewall refused ${mac}: ${e.message}`);
+        return { ok: false, message: 'Could not connect you, try again' };
+      }
+    }
+    try { firewall.revoke(from); } catch { /* not in the allowed set */ }
+    save();
+    log(`Session moved from ${from} to ${mac} (resume code)`);
+    clog(mac, `Session moved here from ${from}`);
     wrong.delete(mac);
     return { ok: true, message: 'Success' };
   }
