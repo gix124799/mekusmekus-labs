@@ -24,7 +24,7 @@ function createPortalHandlers({ sessions, money, ops, wallet, clients, settings,
     const out = {
       internet: true, interface: 'br-lan', id: mac || '', mac: mac || '', address: (mac && ipOf(mac)) || ctx.ip || '', credit: c.credit || 0, point: c.point || 0,
       status: !live ? 'Disconnected' : s.paused ? 'Paused' : s.disconnected ? 'Disconnected' : 'Connected', now: t, trial: false, lastinsertedvendo: 'main', max_data_limit: dataBytes(s && s.max_data_limit), start_date: (s && s.startedAt) || 0, total_download_data: (s && s.usedDown) || 0, total_upload_data: (s && s.usedUp) || 0,
-      ulimit: (s && s.upload) || '', dlimit: (s && s.download) || '', RXRate: 0, TXRate: 0, upload: 0, download: 0, code: (s && s.code) || '', resduration: '00:00:00',
+      ulimit: (s && s.upload) || '', dlimit: (s && s.download) || '', RXRate: 0, TXRate: 0, upload: 0, download: 0, code: (s && (s.code || s.resumeCode)) || '', resduration: '00:00:00',
     };
     out.validity = 0;
     if (live) {
@@ -41,7 +41,14 @@ function createPortalHandlers({ sessions, money, ops, wallet, clients, settings,
   const rateCfg = () => cfg().main.config;
 
   return {
-    [K(0)]: guarded('', (_p, ctx) => (ctx.mac ? clientLog.read(ctx.mac).data.replace(/\n/g, '\n') : '')),
+    // Logs page; while the device has time it ends with the code that takes the time to a new MAC.
+    [K(0)]: guarded('', (_p, ctx) => {
+      if (!ctx.mac) return '';
+      const logs = clientLog.read(ctx.mac).data;
+      const s = sessions.getSession(ctx.mac);
+      const live = !!s && (s.paused || s.expiresAt > now());
+      return live && s.resumeCode ? `${logs}Resume code: ${s.resumeCode} - if your phone changes its MAC, enter this code in the voucher box to get your time back\n` : logs;
+    }),
     [K(2)]: guarded({}, (_p, ctx) => info(ctx.mac, ctx)),
 
     [K(3)]: guarded('Error', (_p, ctx) => {
