@@ -35,7 +35,7 @@ function commands(entries) {
 function entriesFor(root) {
   const out = [];
   const add = (srcDir, destDir, files) => files.forEach((f) => out.push({ src: path.join(srcDir, f), dest: path.posix.join(destDir, f.split(path.sep).join('/')) }));
-  add(root, APP, ['main.js', 'package.json', 'package-lock.json']);
+  add(root, APP, ['main.js', 'package.json']);
   add(root, APP, walk(root, 'lib'));
   add(root, APP, walk(root, 'config').filter((f) => f.endsWith('.json')));
   add(root, APP, walk(root, 'public/theme'));
@@ -46,7 +46,7 @@ function entriesFor(root) {
   const deps = execFileSync('npm', ['ls', '--omit=dev', '--all', '--parseable'], { cwd: root, encoding: 'utf8' }).split('\n').filter((p) => p.startsWith(path.join(root, 'node_modules') + path.sep));
   for (const d of [...new Set(deps)]) add(root, APP, walk(root, path.relative(root, d)));
   const seen = new Set(); // nested node_modules are walked once through their parent and again as their own entry
-  return out.filter((e) => !seen.has(e.dest) && seen.add(e.dest));
+  return out.filter((e) => !/\.map$/.test(e.dest) && !seen.has(e.dest) && seen.add(e.dest)); // source maps are debugger-only weight
 }
 
 module.exports = { walk, commands, entriesFor };

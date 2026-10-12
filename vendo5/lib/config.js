@@ -34,6 +34,12 @@ function loadConfig(dir, defaultsDir = '/opt/vendo5/config') {
       if (!(k in cfg[stem])) throw new Error(`config ${stem}.json: missing required key "${k}"`);
     }
   }
+  if (cfg.vendo.relay_pin !== undefined && !(Number.isInteger(cfg.vendo.relay_pin) && cfg.vendo.relay_pin >= 0 && cfg.vendo.relay_pin <= 255)) {
+    throw new Error('config vendo.json: "relay_pin" must be an integer from 0 to 255');
+  }
+  if (cfg.vendo.relay_pin_active !== undefined && ![0, 1].includes(cfg.vendo.relay_pin_active)) {
+    throw new Error('config vendo.json: "relay_pin_active" must be 0 or 1');
+  }
   loaded = cfg;
   return cfg;
 }

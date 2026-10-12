@@ -1,4 +1,5 @@
 const path = require('node:path');
+const clientIp = require('./lib/client-ip');
 const { loadConfig } = require('./lib/config');
 const { log } = require('./lib/logger');
 const { createGpio } = require('./lib/gpio');
@@ -88,7 +89,7 @@ process.on('SIGINT', shutdown);
 
 log('info', 'vendo5 started', { version, config: Object.keys(config) });
 
-const { coin_pin, pulse_value_pesos, pesos_per_minute } = config.vendo;
+const { coin_pin, relay_pin = 11, relay_pin_active = 1, pulse_value_pesos, pesos_per_minute } = config.vendo;
 
 // After a pin change the machine restarts to use the new pins. Only under a supervisor (procd respawns it);
 // a bare `node main.js` keeps running and picks the pins up next time it is started.
@@ -157,7 +158,7 @@ try {
   const vouchers = createVouchers({ file: path.join(stateDir, 'vouchers', 'list.json') });
   const tickets = createTickets({ file: path.join(stateDir, 'vouchers', 'tickets.json') });
   const credits = createCredits({ file: path.join(stateDir, 'credits', 'list.json') });
-  const settings = createSettings({ file: path.join(stateDir, 'settings.json'), deviceName, coinPin: coin_pin });
+  const settings = createSettings({ file: path.join(stateDir, 'settings.json'), deviceName, coinPin: coin_pin, relayPin: relay_pin, relayPinActive: relay_pin_active });
   const vendos = createVendos({ settings });
   const clients = createClients({ file: path.join(stateDir, 'clients.json') });
   const access = createAccess({ file: path.join(stateDir, 'access.json') });
@@ -259,7 +260,7 @@ const endInsert = (mac, io) => { const i = inserts.get(mac); if (!i) return; cle
 if (admin) {
   const adminIo = attachWire(server, { events: admin.events, sessions: admin.sessions, log });
   admin.setPush((ev, payload) => adminIo.pushAuthed(ev, payload));
-  const portalIo = attachPortal(server, { events: admin.portalEvents, identify: (sock) => arp.ipToMac(String(sock.handshake.address || '').replace(/^::ffff:/, '')), log, ...admin.themeResolver });
+  const portalIo = attachPortal(server, { events: admin.portalEvents, identify: (sock) => arp.ipToMac(clientIp(sock.handshake.address, sock.handshake.headers)), log, ...admin.themeResolver });
   const waitMsFor = (vendo) => (Number((admin.vendos.get(vendo) || {}).countdownMax) || admin.settings.read().main.countdownMax) * 1000;
   const armInsert = (mac, vendo = (inserts.get(mac) || {}).vendo || 'main', wait = waitMsFor(vendo)) => {
     const old = inserts.get(mac);
@@ -365,24 +366,36 @@ subApi = admin ? createSubvendoApi({
 }) : null;
 
 // A missing/unwritable coin pin must not take the portal and admin down with it.
-try {
-  const gpio = createGpio(gpioBase);
-  const live = admin ? admin.settings.read().main : null;
-  const pin = live ? Number(live.pins.incoin) || coin_pin : coin_pin;
-  const edge = live && ['rising', 'falling', 'both'].includes(live.edge) ? live.edge : 'rising';
-  gpio.exportPin(pin);
-  const relayPin = live && String(live.pins.relay ?? '') !== '' ? Number(live.pins.relay) : NaN;
-  if (Number.isInteger(relayPin) && relayPin >= 0) {
-    const active = Number(live.relaypinactive) === 0 ? 0 : 1;
+const gpio = createGpio(gpioBase);
+const live = admin ? admin.settings.read().main : null;
+const pin = live ? Number(live.pins.incoin) || coin_pin : coin_pin;
+const edge = live && ['rising', 'falling', 'both'].includes(live.edge) ? live.edge : 'rising';
+const relayPin = live && String(live.pins.relay ?? '') !== '' ? Number(live.pins.relay) : NaN;
+if (Number.isInteger(relayPin) && relayPin >= 0) {
+  const active = Number(live.relaypinactive) === 0 ? 0 : 1;
+  try {
     gpio.exportPin(relayPin);
-    coinRelay = (on) => { try { gpio.writePin(relayPin, on ? active : 1 - active); } catch (e) { log('error', 'coin relay write failed', { pin: relayPin, error: e.message }); } };
-    coinRelay(false);
+    coinRelay = (on) => {
+      try {
+        gpio.writePin(relayPin, on ? active : 1 - active);
+        return true;
+      } catch (e) {
+        log('error', 'coin relay write failed', { pin: relayPin, error: e.message });
+        return false;
+      }
+    };
+    if (coinRelay(false)) log('info', 'main coin slot power cut at startup', { pin: relayPin });
+  } catch (e) {
+    log('error', 'main coin slot relay unavailable', { pin: relayPin, error: e.message });
   }
+}
+try {
+  gpio.exportPin(pin);
   gpio.watchPin(pin, 'in', edge, (value) => {
     if (value === (edge === 'falling' ? 0 : 1)) guardOf('main').pulse();
   });
 } catch (e) {
-  log('error', 'coin gpio unavailable; portal runs without coin input', { pin: coin_pin, error: e.message });
+  log('error', 'coin gpio unavailable; portal runs without coin input', { pin, error: e.message });
 }
 
 // Speed limits and data caps (nft `bwlimit` chain); a device over its cap loses its session.

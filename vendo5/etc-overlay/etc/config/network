@@ -29,6 +29,8 @@ config device 'br_lan'
 	option type 'bridge'
 	option name 'br-lan'
 	list ports 'eth1'
+	# br-lan (10.0.0.1) exists from boot even while the USB adapter is still enumerating or unplugged, so dnsmasq and the portal never depend on its timing
+	option bridge_empty '1'
 
 config interface 'lan'
 	option device 'br-lan'

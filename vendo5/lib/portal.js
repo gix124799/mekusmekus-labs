@@ -1,6 +1,7 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const clientIp = require('./client-ip');
 
 const PAY_INTENT_TTL_MS = 10000;
 const THEME_DIR = path.join(__dirname, '..', 'public', 'theme');
@@ -181,10 +182,7 @@ function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, ch
   }
 
   function clientMac(req) {
-    // dual-stack server binds to '::' by default; real IPv4 clients arrive
-    // as '::ffff:a.b.c.d' and `ip neigh show` has no entry for that form.
-    const ip = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
-    return arp.ipToMac(ip);
+    return arp.ipToMac(clientIp(req.socket.remoteAddress, req.headers));
   }
 
   function remainingSecondsFor(mac, now = Date.now()) {
@@ -207,7 +205,7 @@ function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, ch
 
     // Sub-vendo ESP8266s (signed, see lib/subvendo.js); before clientMac() since the handler looks the ESP up itself.
     if (subvendo && req.method === 'POST' && req.url === '/subvendo/poll') {
-      const ip = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+      const ip = clientIp(req.socket.remoteAddress, req.headers);
       readJsonBody(req).then((b) => reply(res, subvendo(b, ip)));
       return;
     }

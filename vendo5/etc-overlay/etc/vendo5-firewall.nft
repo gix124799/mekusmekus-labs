@@ -26,6 +26,24 @@
 # every rule below (and lib/system/shaper.js, which reads it) follows it. Rules stay pinned to that one port.
 define WAN = "eth0"
 
+# Declare the base chains before flushing so first boot and subsequent fw4
+# reloads use the same atomic transaction. Preserve allowed/walled sets and
+# dynamic bwlimit rules; replace only static rules to remove stale WAN names.
+table inet vendo5 {
+    chain dstnat {
+        type nat hook prerouting priority dstnat; policy accept;
+    }
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+    }
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+    }
+}
+flush chain inet vendo5 dstnat
+flush chain inet vendo5 forward
+flush chain inet vendo5 postrouting
+
 table inet vendo5 {
 	set allowed {
 		type ether_addr
@@ -39,7 +57,14 @@ table inet vendo5 {
 	chain dstnat {
 		type nat hook prerouting priority dstnat; policy accept;
 		iifname "br-lan" ip daddr @walled accept
-		iifname "br-lan" ether saddr != @allowed tcp dport 80 dnat ip to 10.0.0.1:3000
+		# unpaid clients: DNS to the captive resolver (dnsmasq 'captive', port 90), web to the portal's nginx
+		iifname "br-lan" ether saddr != @allowed udp dport 53 redirect to :90
+		iifname "br-lan" ether saddr != @allowed tcp dport 53 redirect to :90
+		iifname "br-lan" ether saddr != @allowed tcp dport 80 dnat ip to 10.0.0.1:80
+		# HTTPS is NOT DNAT'd here (see header comment): forcing it to nginx's self-signed cert on an
+		# SNI/Host it doesn't own fails TLS before the browser ever sees our redirect, so the phone shows
+		# "can't be reached" instead of the portal. Falls through to the forward chain's DROP policy
+		# instead — confirmed fix, tested on real hardware 2026-10-13 (TEST_vendo5_v11_portal-fixed-v3).
 	}
 
 	# Per-device speed limits and byte counters; lib/system/shaper.js rewrites this chain (flush + rules) as one
@@ -50,11 +75,12 @@ table inet vendo5 {
 
 	chain forward {
 		type filter hook forward priority filter; policy drop;
-		# replies to what a paid client started: without this the WAN->LAN half of every connection is dropped here
-		ct state established,related accept
+		# Only WAN replies bypass the client-MAC check. LAN traffic must still
+		# match the live allowed/walled sets, including established TCP flows.
+		iifname $WAN oifname "br-lan" ct state established,related accept
 		iifname "br-lan" oifname $WAN ether saddr @allowed accept
 		iifname "br-lan" oifname $WAN ip daddr @walled accept
-		# unpaid traffic to the portal's own app (port 3000) and to the
+		# unpaid traffic to the portal's own HTTP proxy (port 80) and to the
 		# router itself must still reach it — only gate LAN->WAN forwarding.
 		iifname "br-lan" oifname "br-lan" accept
 	}

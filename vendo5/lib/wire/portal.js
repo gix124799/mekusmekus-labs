@@ -1,3 +1,4 @@
+const { formatClientLogLine } = require('../store/clientlog');
 const { timeForPesos } = require('../money/rates');
 const { dataBytes } = require('../money/limits');
 
@@ -47,7 +48,9 @@ function createPortalHandlers({ sessions, money, ops, wallet, clients, settings,
       const logs = clientLog.read(ctx.mac).data;
       const s = sessions.getSession(ctx.mac);
       const live = !!s && (s.paused || s.expiresAt > now());
-      return live && s.resumeCode ? `${logs}Resume code: ${s.resumeCode} - if your phone changes its MAC, enter this code in the voucher box to get your time back\n` : logs;
+      if (!live || !s.resumeCode) return logs;
+      const hint = formatClientLogLine(new Date(now()), `Resume code: ${s.resumeCode} - if your phone changes its MAC, enter this code in the voucher box to get your time back`);
+      return `${logs}${logs && !logs.endsWith('\n') ? '\n' : ''}${hint}\n`;
     }),
     [K(2)]: guarded({}, (_p, ctx) => info(ctx.mac, ctx)),
 

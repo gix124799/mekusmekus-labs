@@ -1,7 +1,8 @@
 html,body{
-background-image: url('../image/background.jpg');
-background-size: cover;
-background-repeat: no-repeat;
+background:
+  radial-gradient(ellipse at 15% 10%, rgba(0, 191, 255, 0.16), transparent 38%),
+  radial-gradient(ellipse at 90% 90%, rgba(255, 184, 0, 0.10), transparent 35%),
+  #071323;
 height: 100%;
 font-family: 'Numans', sans-serif;
 }
@@ -9,14 +10,19 @@ font-family: 'Numans', sans-serif;
 .container{
 height: 100%;
 align-content: center;
+padding: 24px 15px;
 }
 
 .card{
-height: 370px;
-margin-top: auto;
-margin-bottom: auto;
-width: 400px;
-background-color: rgba(0,0,0,0.5) !important;
+width: 100%;
+max-width: 420px;
+margin: auto;
+overflow: hidden;
+color: #eaf7ff;
+background: rgba(9, 26, 45, 0.96) !important;
+border: 1px solid rgba(0, 191, 255, 0.55);
+border-radius: 18px;
+box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45), 0 0 35px rgba(0, 191, 255, 0.10);
 }
 
 .social_icon span{
@@ -31,7 +37,27 @@ cursor: pointer;
 }
 
 .card-header h3{
-color: white;
+color: #f4fbff;
+font-size: 1.8rem;
+font-weight: 700;
+letter-spacing: 0.12em;
+margin: 0;
+}
+
+.card-header{
+background: linear-gradient(110deg, rgba(0, 191, 255, 0.18), rgba(9, 26, 45, 0));
+border-bottom: 1px solid rgba(0, 191, 255, 0.22);
+padding: 1.25rem 1.5rem;
+}
+
+.card-body{
+padding: 1.5rem;
+}
+
+.card-footer{
+background: rgba(3, 13, 25, 0.55);
+border-top: 1px solid rgba(0, 191, 255, 0.16);
+padding: 0.85rem 1.5rem;
 }
 
 .social_icon{
@@ -42,9 +68,29 @@ top: -45px;
 
 .input-group-prepend span{
 width: 50px;
-background-color: #FFC312;
-color: black;
-border:0 !important;
+background: #00bfff;
+color: #061321;
+border: 0 !important;
+border-radius: 8px 0 0 8px;
+}
+
+.input-group .form-control{
+height: 48px;
+color: #eaf7ff;
+background: #10263d;
+border: 1px solid rgba(0, 191, 255, 0.22);
+border-radius: 0 8px 8px 0;
+}
+
+.input-group .form-control::placeholder{
+color: #91a9bc;
+}
+
+.input-group .form-control:focus{
+color: #fff;
+background: #10263d;
+border-color: #00bfff;
+box-shadow: 0 0 0 3px rgba(0, 191, 255, 0.16) !important;
 }
 
 input:focus{
@@ -66,22 +112,49 @@ margin-right: 5px;
 }
 
 .login_btn{
-color: black;
-background-color: #FFC312;
-width: 100px;
+color: #172033;
+background: #ffbd2e;
+border: 0;
+border-radius: 8px;
+font-weight: 700;
+min-width: 112px;
+padding: 0.65rem 1.25rem;
+transition: background-color 0.18s ease, transform 0.18s ease;
 }
 
 .login_btn:hover{
-color: black;
-background-color: white;
+color: #101a2a;
+background: #ffd166;
+transform: translateY(-1px);
 }
 
 .links{
-color: white;
+color: #b9cfdf;
 }
 
 .links a{
 margin-left: 4px;
+color: #00bfff;
+}
+
+#error{
+color: #ffd166 !important;
+}
+
+#version,
+#prefix{
+color: #a7bfd1 !important;
+}
+
+@media (max-width: 480px){
+  .card-header,
+  .card-body{
+    padding: 1.15rem;
+  }
+
+  .card-header h3{
+    font-size: 1.5rem;
+  }
 }
 
 .toast-container {
@@ -130,4 +203,3 @@ margin-left: 4px;
     background-color: rgba(21, 0, 193, 0.95);
     border-color: rgba(21, 0, 193, 0.95);
 }
-

@@ -1,20 +1,30 @@
 const fs = require('node:fs');
+const { Transform, pipeline } = require('node:stream');
 
 // Stream a request body to `dest` without holding it in memory; refuses (and removes the file) past `limit` bytes.
 function bodyToFile(req, dest, limit) {
   return new Promise((resolve) => {
-    const out = fs.createWriteStream(dest);
     let n = 0;
     let over = false;
-    req.on('data', (c) => {
-      n += c.length;
-      if (n > limit) { over = true; out.destroy(); req.destroy(); return; }
-      out.write(c);
+    const limitBytes = new Transform({
+      transform(chunk, _encoding, callback) {
+        n += chunk.length;
+        if (n > limit) {
+          over = true;
+          callback();
+          return;
+        }
+        callback(null, chunk);
+      },
     });
-    req.on('end', () => out.end(() => resolve(over ? null : n)));
-    req.on('error', () => { out.destroy(); resolve(null); });
-    out.on('error', () => resolve(null));
-    req.on('close', () => { if (over) { fs.rmSync(dest, { force: true }); resolve(null); } });
+    pipeline(req, limitBytes, fs.createWriteStream(dest), (error) => {
+      if (error || over) {
+        fs.rmSync(dest, { force: true });
+        resolve(null);
+        return;
+      }
+      resolve(n);
+    });
   });
 }
 

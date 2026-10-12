@@ -7,6 +7,8 @@ const { spawnSync } = require('node:child_process');
 
 const SCRIPT = path.join(__dirname, '..', 'etc-overlay', 'etc', 'vendo5-netdetect.sh');
 const NFT = path.join(__dirname, '..', 'etc-overlay', 'etc', 'vendo5-firewall.nft');
+const NETWORK = path.join(__dirname, '..', 'etc-overlay', 'etc', 'config', 'network');
+const DHCP = path.join(__dirname, '..', 'etc-overlay', 'etc', 'config', 'dhcp');
 
 // nics: { name: 'usb' | 'onboard' | 'wifi' | 'virtual' }; uci: starting config. Returns what the script did.
 function run(nics, uci = { 'network.wan.device': 'eth0', 'network.br_lan.ports': 'eth1' }, nft = fs.readFileSync(NFT, 'utf8')) {
@@ -44,6 +46,26 @@ fs.writeFileSync('${state}', JSON.stringify(s));
   };
 }
 const wanOf = (nft) => /^define WAN = "(.+)"$/m.exec(nft)[1];
+
+test('factory LAN is an untagged br-lan bridge at 10.0.0.1/19 with no VLAN devices', () => {
+  const network = fs.readFileSync(NETWORK, 'utf8');
+  assert.match(network, /config device 'br_lan'[\s\S]*?option name 'br-lan'/);
+  assert.match(network, /config interface 'lan'[\s\S]*?option device 'br-lan'[\s\S]*?option ipaddr '10\.0\.0\.1'[\s\S]*?option netmask '255\.255\.224\.0'/);
+  assert.doesNotMatch(network, /vlan/i);
+  const dhcp = fs.readFileSync(DHCP, 'utf8');
+  assert.match(dhcp, /config dhcp 'lan'[\s\S]*?option start '2'[\s\S]*?option limit '8190'/);
+  assert.match(dhcp, /list dhcp_option '3,10\.0\.0\.1'/);
+  assert.match(dhcp, /list dhcp_option '6,10\.0\.0\.1/);
+});
+
+test('unpaid clients get captive DNS (port 90, every name -> 10.0.0.1), HTTP to the portal, HTTPS dropped (no cert to show it over)', () => {
+  const nft = fs.readFileSync(NFT, 'utf8');
+  for (const r of [/udp dport 53 redirect to :90/, /tcp dport 53 redirect to :90/, /tcp dport 80 dnat ip to 10\.0\.0\.1:80/]) assert.match(nft, r);
+  assert.doesNotMatch(nft, /tcp dport 443 dnat/);
+  const dhcp = fs.readFileSync(DHCP, 'utf8');
+  assert.match(dhcp, /config dnsmasq 'captive'[\s\S]*?option port '90'[\s\S]*?list address '\/#\/10\.0\.0\.1'/);
+  assert.equal((dhcp.match(/option instance 'main'/g) || []).length, 2); // lan+wan DHCP stay on the main resolver only
+});
 
 test('the shipped firewall file names its WAN once and every rule follows it', () => {
   const nft = fs.readFileSync(NFT, 'utf8');

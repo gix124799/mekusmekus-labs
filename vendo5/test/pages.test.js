@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
 const path = require('node:path');
 const { createPages, trimMenu, trimNavbar, trimProfile, stripLoginNames, endOfLi } = require('../lib/ui/pages');
 
@@ -10,10 +11,22 @@ const links = (html) => [...html.matchAll(/href="\?page=([\w-]+)"/g)].map((m) =>
 
 test('shell: placeholders are filled and the page script is selected', () => {
   const html = pages().renderShell('dashboard');
-  assert.ok(html.includes('/nav/script/dashboard.js?version=1.2.3'));
+  const css = fs.readFileSync(path.join(ROOT, 'nav/assets/css/style.css'), 'utf8');
+  assert.ok(html.includes('/nav/script/dashboard.js?version=1.2.3&design=4'));
+  assert.ok(html.includes('/nav/assets/css/style.css?version=1.2.3&design=5'));
+  assert.ok(html.includes('<img src="/theme/banner.jpg" alt="logo" style="object-fit: contain;" />'));
+  assert.match(css, /\.card \{[^}]*border: 1px solid rgba\(0, 191, 255, 0\.55\);/s);
+  assert.match(css, /\.card \.card-body \{[^}]*border: 1px solid rgba\(0, 191, 255, 0\.55\);/s);
+  assert.match(css, /\.card \.card-footer \{[^}]*border: 1px solid rgba\(0, 191, 255, 0\.55\);/s);
+  assert.match(css, /\.card \.card-footer \{[^}]*border-radius: 0\.5rem;/s);
   assert.ok(html.includes('Admin| VENDO-ONE'));
   for (const left of ['{1}', '{2}', '@script.js']) assert.ok(!html.includes(left), `${left} left in the page`);
-  assert.ok(pages().renderShell('logs').includes('/nav/script/logs.js?version=1.2.3'));
+  assert.ok(pages().renderShell('logs').includes('/nav/script/logs.js?version=1.2.3&design=4'));
+});
+
+test('dashboard uptime starts at zero until the asynchronous system-info response arrives', () => {
+  const script = fs.readFileSync(path.join(ROOT, 'nav/script/dashboard.js'), 'utf8');
+  assert.match(script, /let hg_0x5dce2f=\{uptime:0\}/);
 });
 
 test('shell: the menu keeps only the enabled pages and stays well-formed', () => {
@@ -58,8 +71,15 @@ test('enabling more pages and features brings their entries back', () => {
 
 test('login page: placeholders filled, and the password inputs no longer carry name attributes', () => {
   const html = pages().renderLogin();
-  assert.ok(html.includes('Sign In| VENDO-ONE'));
+  const css = fs.readFileSync(path.join(ROOT, 'main/css/style.css'), 'utf8');
+  assert.ok(html.includes('<h3 style="text-transform: capitalize;">MEKUSMEKUS</h3>'));
   assert.ok(!html.includes('{1}') && !html.includes('{2}'));
+  assert.ok(html.includes('/main/css/style.css?version=1.2.3&design=3'));
+  assert.ok(!css.includes('banner.jpg'));
+  assert.match(css, /#071323/);
+  assert.match(css, /#00bfff/);
+  assert.match(css, /border: 1px solid rgba\(0, 191, 255, 0\.55\);/);
+  assert.match(css, /#ffbd2e/);
   assert.ok(!html.includes('name="admin-password"') && !html.includes('name="admin-username"'));
   assert.ok(html.includes('id="password"') && html.includes('id="username"'), 'the script reads them by id');
   assert.ok(/<form action='\/admin' method='post'>/.test(html), 'the form still posts to /admin');

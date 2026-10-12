@@ -45,8 +45,8 @@ function createOfflinePageHandlers({ file, mainlog }) {
         case 'getLogsFile': return [];
         case 'readLogFile': return '';
         case 'remove_log': case 'remove_all_logs': return '';
-        case 'get-users-loggedin': case 'get-users-data': return { info: {} };
-        case 'getClient': return { info: { deviceId: '', duration: 0, login: '', logout: '', name: '', phone: '', total_credit: 0, model: '', download: 0, upload: 0, id: '', imageurl: '' } };
+        case 'get-users-loggedin': case 'get-users-data': return {};
+        case 'getClient': return {};
         case 'getSales': return {};
         case 'clearSales': case 'removeSales': case 'clear_sales': case 'clear-users-sales': return '';
         case 'save-insertban': {

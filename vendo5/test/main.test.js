@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const http = require('node:http');
+const UI = require('./helpers/ui-root');
 
 const MAIN = path.join(__dirname, '..', 'main.js');
 const DEFAULTS = path.join(__dirname, '..', 'config');
@@ -21,30 +22,34 @@ function run(env) {
 const waitFor = async (r, re) => { for (let i = 0; i < 160 && !re.test(r.out()); i++) await new Promise((x) => setTimeout(x, 50)); };
 const tmpDir = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'v5main-')), 'cfg');
 
-// Task 5 added real-hardware gpio.exportPin to main.js's startup path; any
-// test that reaches that far now needs a fake sysfs dir (matching the
-// default vendo.json's coin_pin: 17), same as the dedicated portal test below.
 function fakeGpioBase() {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'v5gpiobase-'));
   fs.writeFileSync(path.join(base, 'export'), '');
   fs.writeFileSync(path.join(base, 'unexport'), '');
-  const pinDir = path.join(base, 'gpio17');
-  fs.mkdirSync(pinDir, { recursive: true });
-  fs.writeFileSync(path.join(pinDir, 'value'), '0');
-  fs.writeFileSync(path.join(pinDir, 'direction'), '');
-  fs.writeFileSync(path.join(pinDir, 'edge'), '');
+  for (const pin of [11, 12]) {
+    const pinDir = path.join(base, `gpio${pin}`);
+    fs.mkdirSync(pinDir, { recursive: true });
+    fs.writeFileSync(path.join(pinDir, 'value'), '0');
+    fs.writeFileSync(path.join(pinDir, 'direction'), '');
+    fs.writeFileSync(path.join(pinDir, 'edge'), '');
+  }
   return base;
 }
 
 test('starts, logs startup line, exits 0 on SIGTERM', async () => {
+  const gpioBase = fakeGpioBase();
   const r = run({
     VENDO5_CONFIG_DIR: tmpDir(),
     VENDO5_DEFAULTS_DIR: DEFAULTS,
-    VENDO5_GPIO_BASE: fakeGpioBase(),
+    VENDO5_GPIO_BASE: gpioBase,
+    VENDO5_UI_DIR: UI,
     VENDO5_PORTAL_PORT: '0',
   });
-  await new Promise((res) => r.p.stdout.once('data', res));
+  await waitFor(r, /portal listening/);
   assert.match(r.out(), /"message":"vendo5 started"/);
+  assert.equal(fs.readFileSync(path.join(gpioBase, 'gpio11', 'direction'), 'utf8'), 'low');
+  assert.equal(fs.readFileSync(path.join(gpioBase, 'gpio12', 'direction'), 'utf8'), 'in');
+  assert.match(r.out(), /"pin":11.*"message":"main coin slot power cut at startup"/);
   r.p.kill('SIGTERM');
   assert.equal(await r.exited, 0);
   assert.match(r.out(), /"message":"vendo5 stopping"/);
@@ -66,7 +71,7 @@ test('vendo config missing pricing fields fails startup (extends required-key va
   // incomplete — otherwise the file-missing check for an unrelated config
   // (checked first) fires before vendo's own required-key check does.
   for (const f of fs.readdirSync(DEFAULTS)) fs.copyFileSync(path.join(DEFAULTS, f), path.join(dir, f));
-  fs.writeFileSync(path.join(dir, 'vendo.json'), JSON.stringify({ coin_pin: 17 }));
+  fs.writeFileSync(path.join(dir, 'vendo.json'), JSON.stringify({ coin_pin: 12 }));
   const r = run({ VENDO5_CONFIG_DIR: dir, VENDO5_DEFAULTS_DIR: DEFAULTS });
   assert.equal(await r.exited, 1);
   assert.match(r.out(), /"level":"error".*vendo\.json/);
@@ -75,14 +80,8 @@ test('vendo config missing pricing fields fails startup (extends required-key va
 test('portal listens and serves the landing page; coin pulse with no pay-intent is refused and logged', async () => {
   const configDir = tmpDir();
   const sessionFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'v5sessfile-')), 'sessions.json');
-  const gpioBase = fs.mkdtempSync(path.join(os.tmpdir(), 'v5gpiobase-'));
-  fs.writeFileSync(path.join(gpioBase, 'export'), '');
-  fs.writeFileSync(path.join(gpioBase, 'unexport'), '');
-  const pinDir = path.join(gpioBase, 'gpio17');
-  fs.mkdirSync(pinDir, { recursive: true });
-  fs.writeFileSync(path.join(pinDir, 'value'), '0');
-  fs.writeFileSync(path.join(pinDir, 'direction'), '');
-  fs.writeFileSync(path.join(pinDir, 'edge'), '');
+  const gpioBase = fakeGpioBase();
+  const pinDir = path.join(gpioBase, 'gpio12');
 
   const r = run({
     VENDO5_CONFIG_DIR: configDir,
@@ -114,14 +113,8 @@ test('portal listens and serves the landing page; coin pulse with no pay-intent 
 test('a paid coin pulse credits the session, calls firewall allow, and persists to disk', async () => {
   const configDir = tmpDir();
   const sessionFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'v5sessfile-')), 'sessions.json');
-  const gpioBase = fs.mkdtempSync(path.join(os.tmpdir(), 'v5gpiobase-'));
-  fs.writeFileSync(path.join(gpioBase, 'export'), '');
-  fs.writeFileSync(path.join(gpioBase, 'unexport'), '');
-  const pinDir = path.join(gpioBase, 'gpio17');
-  fs.mkdirSync(pinDir, { recursive: true });
-  fs.writeFileSync(path.join(pinDir, 'value'), '0');
-  fs.writeFileSync(path.join(pinDir, 'direction'), '');
-  fs.writeFileSync(path.join(pinDir, 'edge'), '');
+  const gpioBase = fakeGpioBase();
+  const pinDir = path.join(gpioBase, 'gpio12');
   const mac = 'aa:bb:cc:dd:ee:ff';
 
   const r = run({

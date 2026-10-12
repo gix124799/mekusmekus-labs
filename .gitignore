@@ -1,1 +1,4 @@
 .superpowers/
+.claude/
+__pycache__/
+*.pyc

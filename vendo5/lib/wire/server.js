@@ -1,5 +1,6 @@
 const { Server } = require('socket.io');
 const ss = require('socket.io-stream');
+const clientIp = require('../client-ip');
 
 const COOKIE = 'vendo5_sid';
 
@@ -13,9 +14,7 @@ function parseCookies(header) {
 }
 
 function ipOf(socket) {
-  const fwd = socket.handshake.headers['x-forwarded-for'];
-  const raw = (fwd ? String(fwd).split(',')[0].trim() : socket.handshake.address) || '';
-  return raw.replace(/^::ffff:/, '');
+  return clientIp(socket.handshake.address, socket.handshake.headers);
 }
 
 // Mounts socket.io at `path` (/admin, or /reseller for the reseller portal: the paths the original frontends connect to) and routes each event id

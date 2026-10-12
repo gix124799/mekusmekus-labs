@@ -39,7 +39,7 @@ test('GET /admin without a cookie: the login page and a hardened session cookie'
     assert.equal(res.status, 200);
     assert.match(res.headers['content-type'], /^text\/html/);
     assert.equal(res.headers['cache-control'], 'no-store');
-    assert.ok(res.body.includes('Sign In| VENDO'));
+    assert.match(res.body, /<h3[^>]*>MEKUSMEKUS<\/h3>/);
     const ck = res.headers['set-cookie'][0];
     for (const part of ['vendo5_sid=', 'HttpOnly', 'SameSite=Strict', 'Path=/admin', 'Max-Age=3600']) assert.ok(ck.includes(part), part + ' in ' + ck);
     assert.equal(r.sessions.size(), 1);
@@ -51,7 +51,7 @@ test('GET /admin with an existing logged-out session reuses it (no new cookie, n
   try {
     const s = r.sessions.create();
     const res = await r.call('GET', '/admin?page=dashboard', { cookie: `vendo5_sid=${s.id}` });
-    assert.ok(res.body.includes('Sign In|'), 'logged out: the page param is ignored');
+    assert.match(res.body, /<h3[^>]*>MEKUSMEKUS<\/h3>/, 'logged out: the page param is ignored');
     assert.equal(res.headers['set-cookie'], undefined);
     assert.equal(r.sessions.size(), 1);
   } finally { r.stop(); }
@@ -95,7 +95,7 @@ test('POST /admin {logout:true} ends the session and clears the cookie; the next
     assert.equal(res.status, 200);
     assert.equal(res.body, '{}');
     assert.match(res.headers['set-cookie'][0], /Max-Age=0/);
-    assert.ok((await r.call('GET', '/admin?page=dashboard', { cookie })).body.includes('Sign In|'));
+    assert.match((await r.call('GET', '/admin?page=dashboard', { cookie })).body, /<h3[^>]*>MEKUSMEKUS<\/h3>/);
   } finally { r.stop(); }
 });
 

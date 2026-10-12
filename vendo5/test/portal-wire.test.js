@@ -18,9 +18,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function boot(settings) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v5pw-'));
   const gpio = path.join(root, 'gpio');
-  fs.mkdirSync(path.join(gpio, 'gpio17'), { recursive: true });
+  fs.mkdirSync(path.join(gpio, 'gpio11'), { recursive: true });
+  fs.mkdirSync(path.join(gpio, 'gpio12'), { recursive: true });
   fs.mkdirSync(path.join(gpio, 'gpio18'), { recursive: true });
-  for (const f of ['export', 'unexport', 'gpio17/value', 'gpio17/direction', 'gpio17/edge', 'gpio18/direction']) fs.writeFileSync(path.join(gpio, f), '0');
+  for (const f of ['export', 'unexport', 'gpio11/direction', 'gpio12/value', 'gpio12/direction', 'gpio12/edge', 'gpio18/direction']) fs.writeFileSync(path.join(gpio, f), '0');
   if (settings) { fs.mkdirSync(path.join(root, 'state'), { recursive: true }); fs.writeFileSync(path.join(root, 'state', 'settings.json'), JSON.stringify(settings)); }
   const p = spawn(process.execPath, [MAIN], { env: { ...process.env, VENDO5_CONFIG_DIR: path.join(root, 'cfg'), VENDO5_DEFAULTS_DIR: path.join(__dirname, '..', 'config'), VENDO5_SESSION_FILE: path.join(root, 's.json'), VENDO5_STATE_DIR: path.join(root, 'state'), VENDO5_UI_DIR: UI, VENDO5_GPIO_BASE: gpio, VENDO5_PORTAL_PORT: '0', VENDO5_FIREWALL_CMD: 'noop', VENDO5_ARP_FAKE_MAC: MAC } });
   let out = '';
@@ -58,7 +59,7 @@ test('portal page, theme files, coins into the wallet, then Connect', async () =
     const r = await ask(c, K(13), {});
     assert.equal(r.message, 'Insert');
     await sleep(200);
-    fs.writeFileSync(path.join(s.gpio, 'gpio17', 'value'), '1');
+    fs.writeFileSync(path.join(s.gpio, 'gpio12', 'value'), '1');
     assert.deepEqual(await coin, { credit: 1, incoin: 1 });
 
     assert.equal((await ask(c, K(2))).credit, 1);
@@ -149,7 +150,7 @@ test('sub-vendo: fake ESP is requested, accepted, then its coins fill the wallet
     const coin = new Promise((x) => c.on(K(20), x));
     assert.equal((await ask(c, K(13), {})).message, 'Insert');
     await sleep(200);
-    fs.writeFileSync(path.join(s.gpio, 'gpio17', 'value'), '1');
+    fs.writeFileSync(path.join(s.gpio, 'gpio12', 'value'), '1');
     assert.deepEqual(await coin, { credit: 1, incoin: 1 });
     // a coin event from the sub-vendo while nobody tapped Insert Coin there is an orphan: nothing credited
     r = await post({ chip: 'A1B2C3', boot: 1, nonce: r.nonce, events: [{ id: 1, pulses: 5, minGapMs: 95 }] });

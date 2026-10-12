@@ -28282,8 +28282,9 @@ div.tagsinput span.tag a {
 .navbar .navbar-brand-wrapper .navbar-brand.brand-logo-mini img {
 	max-width: 160px;
 	width: 160px;
-    height: 48px;
-    margin: auto;
+	height: 48px;
+	margin: auto;
+	object-fit: contain;
 }
 
 .navbar .navbar-menu-wrapper {

@@ -23,7 +23,7 @@ test('shape: JSON stays JSON (object and array), other text stays text, nothing 
 
 test('uci lines go to the uci module with their JSON; bad JSON or shape is an error answer, not a crash', () => {
   const r = rig();
-  assert.equal(r.run('ubus call uci get \'{"config":"network","section":"lan"}\'').values.ipaddr, '192.168.1.1');
+  assert.equal(r.run('ubus call uci get \'{"config":"network","section":"lan"}\'').values.ipaddr, '10.0.0.1');
   assert.deepEqual(r.run('ubus call uci set \'{"config":"network","section":"lan","values":{"ipaddr":"10.1.1.1"}}\''), { stdout: '', stderr: '' });
   assert.equal(r.run('ubus call uci get \'{"config":"network","section":"lan","option":"ipaddr"}\'').value, '10.1.1.1');
   assert.equal(r.run('ubus call uci get \'{nope\'').stderr, 'Invalid JSON');
@@ -62,7 +62,7 @@ test('everything else is refused (undefined) and runs nothing, including shell m
 test('no ubus: network status is answered from the emulated uci', () => {
   const r = rig();
   const lan = r.run('ubus call network.interface.lan status');
-  assert.deepEqual([lan.proto, lan.device, lan['ipv4-address']], ['static', 'br-lan', [{ address: '192.168.1.1', mask: 24 }]]);
+  assert.deepEqual([lan.proto, lan.device, lan['ipv4-address']], ['static', 'br-lan', [{ address: '10.0.0.1', mask: 19 }]]);
   assert.equal(r.run('ubus call network.interface.nope status').stderr, 'Command failed: Not found');
   const w = r.run('ubus call network.wireless status');
   assert.equal(w.radio0.interfaces[0].section, 'default_radio0');

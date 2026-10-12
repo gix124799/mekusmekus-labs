@@ -1,4 +1,5 @@
 const { Server } = require('socket.io');
+const clientIp = require('../client-ip');
 
 const WINDOW_MS = 10000;
 const MAX_EVENTS = 40; // per socket per window: the portal's sockets are anonymous, so they are rate limited
@@ -27,7 +28,7 @@ function attachPortal(httpServer, { events, identify, log = () => {}, now = Date
         if (now() - windowStart > WINDOW_MS) { windowStart = now(); count = 0; }
         if (++count > MAX_EVENTS) return; // flooding: dropped without an answer
         try {
-          ack(await def.handler(args[0], { mac: socket.data.mac, socket, ip: String(socket.handshake.address || '').replace(/^::ffff:/, '') }));
+          ack(await def.handler(args[0], { mac: socket.data.mac, socket, ip: clientIp(socket.handshake.address, socket.handshake.headers) }));
         } catch (e) {
           log('error', `portal handler ${id} failed`, { error: e && e.message });
           ack(def.fallback);

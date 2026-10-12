@@ -45,6 +45,15 @@ test('client IP is normalized before ARP lookup (IPv6-mapped IPv4 strips the ::f
   assert.ok(!calls[0].startsWith('::ffff:'), `expected a stripped IPv4, got ${calls[0]}`);
 });
 
+test('portal HTTP trusts the forwarded client IP only through the local reverse proxy', async () => {
+  const { arp, calls } = recordingArp('m1');
+  const { server } = createServer({ session: fakeSession(false), arp, ratePesosPerMinute: 1 });
+  const port = await listen(server);
+  await request(port, 'GET', '/', { headers: { 'x-real-ip': '10.0.0.8' } });
+  server.close();
+  assert.ok(calls.includes('10.0.0.8'));
+});
+
 // Real-frontend ruling: GET / now serves the real app's single SPA shell
 // (same for paid/unpaid), matching the actual decrypted frontend's design
 // — status is conveyed by client-side JS polling /api/status, never by

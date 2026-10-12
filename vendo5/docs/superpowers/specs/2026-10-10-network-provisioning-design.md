@@ -19,7 +19,7 @@ against a fake `runCommand` in tests.
 
 ```
 Internet ── Orange Pi One built-in Ethernet (WAN, DHCP client)
-Orange Pi One USB port ── USB-to-LAN adapter (LAN, static 10.0.0.1/24,
+Orange Pi One USB port ── USB-to-LAN adapter (LAN, static 10.0.0.1/19,
   bridged as 'br-lan') ── Ethernet cable ── standalone access point
   (AP mode) ── Wi-Fi ── customers and admin
 ```
@@ -44,7 +44,7 @@ untouched:
 
 - `dstnat` (prerouting): any client **not** in the `allowed` set making a
   plain HTTP (port 80) request to *any* destination is DNAT'd to the
-  portal app (`10.0.0.1:3000`) — works regardless of which site they
+  portal front door (`10.0.0.1:80`, nginx proxying to the app on localhost:3000) — works regardless of which site they
   were trying to reach, no DNS override needed.
 - `forward` (default policy `drop`): LAN→WAN forwarding is only accepted
   for MACs in `allowed`. Unpaid clients' non-HTTP traffic (HTTPS, etc.)
@@ -63,8 +63,8 @@ check depends on.
 
 ## Files
 
-- `etc-overlay/etc/config/network` — `wan` (DHCP client) / `lan` (bridge
-  `br-lan`, static `10.0.0.1/24`).
+- `etc-overlay/etc/config/network` — `wan` (DHCP client) / `lan` (untagged bridge
+  `br-lan`, static `10.0.0.1/19`, with no VLAN devices).
 - `etc-overlay/etc/config/dhcp` — DHCP server on `lan` only; no DNS
   override (see firewall design above for why).
 - `etc-overlay/etc/config/firewall` — minimal zone config (forward drop

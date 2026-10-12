@@ -6,20 +6,23 @@ only real hardware can prove. Tick each one; note the result and the date.
 Tests already passing without hardware: `npm test` (336) and `python3 scripts/live-test.py` (90 checks).
 
 ## 0. Before you start
-- [ ] Pi reachable by SSH (`ssh root@<ip>`) and the web UI loads from a phone on its Wi-Fi.
+- [ ] Pi reachable on `br-lan` at `10.0.0.1` (no VLAN interfaces); the portal loads at `http://10.0.0.1/`
+      and admin at `http://10.0.0.1/admin` from a phone on its Wi-Fi.
 - [ ] Back up the current `/mnt/wifi5` data: `tar czf /tmp/wifi5-backup.tgz /mnt/wifi5`, and copy it off the Pi.
-- [ ] Note the wiring: coin acceptor signal on GPIO pin `coin_pin` (default 17, `config/vendo.json`; the Settings page
-      can change it), its value per pulse, and the level (rising or falling edge).
+- [ ] Note the wiring: coin acceptor signal GPIO 12 and its power relay GPIO 11 (active-high, `config/vendo.json`);
+      the Main Vendo Pin Setup can change them. Confirm the coin pulse value and edge (rising or falling).
 
 ## 1. Install
 - [ ] Build: `node scripts/make-update` (update archive) or the image commands in `scripts/image-commands.js`.
 - [ ] Install through Admin > 3-dots > Software update, or copy to `/opt/vendo5`. `VENDO5_SUPERVISED=1` must be set
       by procd, or the update and restart buttons refuse.
 - [ ] Service starts at boot and respawns after `kill`. `logread | grep vendo5` shows `portal listening`, no `error`.
-- [ ] Admin login works (`/admin`, factory admin/admin, then change it). Dashboard shows real uptime, memory, load.
+- [ ] Nginx starts at boot and proxies port 80 to Vendo5 on localhost:3000; admin login works (`/admin`,
+      factory admin/admin, then change it). Dashboard shows real uptime, memory, load.
 
 ## 2. Coin input (GPIO)
-- [ ] The pin exports: `ls /sys/class/gpio/gpio17`. A log line `coin gpio unavailable` means it failed.
+- [ ] The pins export: `ls /sys/class/gpio/gpio12 /sys/class/gpio/gpio11`. A `coin gpio unavailable` or
+      `main coin slot relay unavailable` log line means that GPIO could not be set up.
 - [ ] One physical coin gives exactly ONE credit. (Fixed in the watcher for the fake sysfs file; on real sysfs the
       kernel raises one event per edge. Insert 10 coins one at a time and count.)
 - [ ] Multi-pulse coins (a 5 or 10 peso coin) give the right total.

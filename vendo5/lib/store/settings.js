@@ -3,12 +3,12 @@ const { emptyConfig } = require('../money/rates');
 
 // Every setting the Settings page edits, in one file. defaults() builds the factory state; read() merges what is on
 // disk over it, so a file from an older version (fewer keys) still yields a complete object.
-function defaults({ deviceName, coinPin }) {
+function defaults({ deviceName, coinPin, relayPin = 11, relayPinActive = 1 }) {
   return {
     main: {
-      name: deviceName, description: '', coinpin: coinPin, relaypin: '', relaypinactive: 1, edge: 'rising', bill: '', billedge: 'falling',
+      name: deviceName, description: '', coinpin: coinPin, relaypin: relayPin, relaypinactive: relayPinActive, edge: 'rising', bill: '', billedge: 'falling',
       insertbtn: true, billmulti: 1, countdownMax: 15, coinsBlockerDelay: 1000, insertCoinType: 0, coinCorrector: [],
-      pins: { insertled: '', powerled: '', relay: '', incoin: coinPin, inbill: '', billmulti: 1 },
+      pins: { insertled: '', powerled: '', relay: relayPin, incoin: coinPin, inbill: '', billmulti: 1 },
       config: emptyConfig(),
     },
     key: '', insertBanDuration: 3, insertBancount: 3,
@@ -22,9 +22,10 @@ function defaults({ deviceName, coinPin }) {
   };
 }
 
-function createSettings({ file, deviceName, coinPin }) {
-  const store = jsonFile(file, () => defaults({ deviceName, coinPin }));
-  const base = () => defaults({ deviceName, coinPin });
+function createSettings({ file, deviceName, coinPin, relayPin = 11, relayPinActive = 1 }) {
+  const factory = () => defaults({ deviceName, coinPin, relayPin, relayPinActive });
+  const store = jsonFile(file, factory);
+  const base = factory;
   const merge = (a, b) => {
     if (!b || typeof b !== 'object' || Array.isArray(b)) return b === undefined ? a : b;
     const out = Array.isArray(a) ? [...a] : { ...a };

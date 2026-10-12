@@ -5,6 +5,11 @@ const { MAC, noColons } = require('./clients');
 const MAX_LINES = 500;
 const pad = (n) => String(n).padStart(2, '0');
 
+function formatClientLogLine(d, text) {
+  const h = d.getHours();
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(h % 12 || 12)}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${h < 12 ? 'am' : 'pm'} ${String(text).replace(/[\r\n]+/g, ' ')}`;
+}
+
 // Per-device log, one file per MAC; lines "DD/MM/YYYY hh:mm:ss am|pm text" (the Devices page parses that).
 function createClientLog({ dir, now = () => new Date() }) {
   const file = (key) => path.join(dir, `${key}.txt`);
@@ -14,9 +19,7 @@ function createClientLog({ dir, now = () => new Date() }) {
       const key = keyOf(String(mac).toLowerCase());
       if (!key) return false;
       try {
-        const d = now();
-        const h = d.getHours();
-        const line = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(h % 12 || 12)}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${h < 12 ? 'am' : 'pm'} ${String(text).replace(/[\r\n]+/g, ' ')}`;
+        const line = formatClientLogLine(now(), text);
         fs.mkdirSync(dir, { recursive: true });
         let lines = [];
         try { lines = fs.readFileSync(file(key), 'utf8').split('\n').filter(Boolean); } catch { /* first line */ }
@@ -40,4 +43,4 @@ function createClientLog({ dir, now = () => new Date() }) {
   };
 }
 
-module.exports = { createClientLog };
+module.exports = { createClientLog, formatClientLogLine };

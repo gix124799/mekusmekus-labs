@@ -23,8 +23,8 @@ const ask = (c, id, p) => new Promise((res) => { const t = setTimeout(() => res(
 (async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v5fuzz-'));
   const gpio = path.join(root, 'gpio');
-  fs.mkdirSync(path.join(gpio, 'gpio17'), { recursive: true });
-  for (const f of ['export', 'unexport', 'gpio17/value', 'gpio17/direction', 'gpio17/edge']) fs.writeFileSync(path.join(gpio, f), '0');
+  for (const pin of [11, 12]) fs.mkdirSync(path.join(gpio, `gpio${pin}`), { recursive: true });
+  for (const f of ['export', 'unexport', 'gpio11/direction', 'gpio12/value', 'gpio12/direction', 'gpio12/edge']) fs.writeFileSync(path.join(gpio, f), '0');
   const p = spawn(process.execPath, [path.join(ROOT, 'main.js')], { env: { ...process.env, VENDO5_CONFIG_DIR: path.join(root, 'cfg'), VENDO5_DEFAULTS_DIR: path.join(ROOT, 'config'), VENDO5_SESSION_FILE: path.join(root, 's.json'), VENDO5_STATE_DIR: path.join(root, 'state'), VENDO5_UI_DIR: UI, VENDO5_GPIO_BASE: gpio, VENDO5_PORTAL_PORT: '0', VENDO5_FIREWALL_CMD: 'noop' } });
   let out = '';
   let dead = false;
