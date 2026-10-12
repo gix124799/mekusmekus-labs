@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { createNavHandlers } = require('../lib/wire/nav');
 const { createSessionStore } = require('../lib/session');
+const { createMoney } = require('../lib/money/redeem');
 
 function setup(over = {}) {
   const sessions = createSessionStore('/nonexistent/s.json');
@@ -10,9 +11,12 @@ function setup(over = {}) {
   const revoked = [];
   const saved = [];
   const state = { cleared: 0, accountReset: 0, notes: { d1: { title: 't', read: false } }, marked: [] };
+  const allowed = [];
+  const firewall = { revoke: (m) => { if (over.revokeThrows) throw new Error('not in set'); revoked.push(m); }, allow: (m) => allowed.push(m) };
   const nav = createNavHandlers({
     sessions,
-    firewall: { revoke: (m) => { if (over.revokeThrows) throw new Error('not in set'); revoked.push(m); } },
+    firewall,
+    money: createMoney({ sessions, firewall, mainlog: { write: () => {} }, now: () => 100000 }),
     arp: { neighbors: () => ({ 'aa:bb:cc:dd:ee:01': { ip: '10.0.0.5', dev: 'br-lan' } }) },
     stats: { snapshot: () => ({ cpuusage: [1, 2], temp: 40 }) },
     passthrough: (p) => ({ ran: p }),
@@ -23,7 +27,7 @@ function setup(over = {}) {
     now: () => 100000,
     save: () => saved.push(1),
   });
-  return { nav, sessions, lines, revoked, saved, state };
+  return { nav, sessions, lines, revoked, allowed, saved, state };
 }
 const call = (nav, id, payload) => nav[id].handler(payload, {});
 
@@ -103,11 +107,18 @@ test('bulk remove takes {info:[...]} or a bare array of items or macs', () => {
   for (const bad of [[], {}, { info: 'm1' }, null, 'm1', 3]) assert.equal(call(t.nav, '@nav-67345', bad), 'Error', JSON.stringify(bad));
 });
 
-test('disconnect is unavailable, and says so rather than ending the session', () => {
+test('pause button: pauses any running session, resumes a paused one', () => {
   const t = setup();
   t.sessions.addCredit('m1', 1, 1, 50000);
-  assert.equal(call(t.nav, '@nav-22313', { mac: 'm1' }), 'Error');
-  assert.ok(t.sessions.getSession('m1'));
+  assert.equal(call(t.nav, '@nav-22313', { mac: 'm1' }), 'Success');
+  assert.equal(t.sessions.getSession('m1').paused, true);
+  assert.deepEqual(t.revoked, ['m1']);
+  assert.equal(call(t.nav, '@nav-22313', { mac: 'm1' }), 'Success');
+  assert.equal(t.sessions.getSession('m1').paused, undefined);
+  assert.deepEqual(t.allowed, ['m1']);
+  assert.ok(t.lines.some((l) => l === 'system|Admin paused m1'));
+  assert.ok(t.lines.some((l) => l === 'system|Admin resumed m1'));
+  for (const bad of [{ mac: 'nobody' }, null, 3, {}]) assert.equal(call(t.nav, '@nav-22313', bad), 'Error', JSON.stringify(bad));
 });
 
 test('logs: list, read, delete one, delete a category', () => {

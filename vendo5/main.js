@@ -193,6 +193,7 @@ try {
       pppoe: { store: pppoeStore, system: pppoeSystem },
       sessions: session,
       firewall,
+      money,
       arp,
       stats,
       passthrough: createPassthrough({ runCommand, reboot: () => runCommand(['reboot']), systemInfo: stats.systemInfo, net }),

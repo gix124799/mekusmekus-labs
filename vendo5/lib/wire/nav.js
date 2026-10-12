@@ -5,7 +5,7 @@ const macOf = (item) => (typeof item === 'string' ? item : asObj(item).mac);
 
 // Handlers for the admin shell, dashboard and logs pages (@nav-*). Each is (payload, ctx) => reply and
 // every one is guarded: no logged-in session, no answer. Replies copy the shapes the original page reads.
-function createNavHandlers({ pppoe, sessions, firewall, arp, stats, passthrough, mainlog, notifications, licence, account, reset, now = Date.now, save = () => {} }) {
+function createNavHandlers({ pppoe, sessions, firewall, money, arp, stats, passthrough, mainlog, notifications, licence, account, reset, now = Date.now, save = () => {} }) {
   const log = (text) => mainlog.write('system', text);
   const guarded = (fallback, handler) => ({ guard: true, fallback, handler });
 
@@ -89,8 +89,17 @@ function createNavHandlers({ pppoe, sessions, firewall, arp, stats, passthrough,
       log(`Admin extended ${p.voucher} by ${p.duration}s`);
       return 'Success';
     }),
-    // vendo5 sessions cannot be paused, so there is nothing to disconnect without ending them.
-    '@nav-22313': guarded('Error', () => 'Error'),
+    // Pause / resume a client from the dashboard (admin override: any session, no pause spent).
+    '@nav-22313': guarded('Error', (payload) => {
+      const mac = resolveMac(payload);
+      const s = typeof mac === 'string' && sessions.getSession(mac);
+      if (!s || !money) return 'Error';
+      const wasPaused = !!s.paused;
+      const r = wasPaused ? money.resume(mac) : money.adminPause(mac);
+      if (!r.ok) return 'Error';
+      log(`Admin ${wasPaused ? 'resumed' : 'paused'} ${mac}`);
+      return 'Success';
+    }),
     '@nav-44232': guarded('Error', (payload) => {
       const mac = resolveMac(payload);
       if (!remove(mac)) return 'Error';

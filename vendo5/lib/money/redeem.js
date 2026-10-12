@@ -97,10 +97,10 @@ function createMoney({ vouchers, credits, access, clientLog, ratePesosPerMinute 
     return { ok: true, message: 'Success' };
   }
 
-  function pause(mac) {
+  function pause(mac, opts) {
     if (!mac) return { ok: false, message: 'Device not recognised' };
     const before = sessions.getSession(mac) ? structuredClone(sessions.getSession(mac)) : null;
-    const r = sessions.pause(mac, now());
+    const r = sessions.pause(mac, now(), opts);
     if (!r.ok) return { ok: false, message: r.reason };
     try {
       firewall.revoke(mac);
@@ -130,6 +130,9 @@ function createMoney({ vouchers, credits, access, clientLog, ratePesosPerMinute 
     clog(mac, 'Resumed');
     return { ok: true, message: 'Resumed' };
   }
+
+  // Admin dashboard pause: any running session, no pause spent.
+  const adminPause = (mac) => pause(mac, { force: true });
 
   // End a client's session for good (admin Remove): the firewall may never have known the MAC.
   function endSession(mac) {
@@ -170,7 +173,7 @@ function createMoney({ vouchers, credits, access, clientLog, ratePesosPerMinute 
     return { ok: true, message: 'Success' };
   }
 
-  return { redeemVoucher, pause, resume, endSession, createSession, blocked };
+  return { redeemVoucher, pause, adminPause, resume, endSession, createSession, blocked };
 }
 
 module.exports = { createMoney, LOCK_AFTER, LOCK_MS };

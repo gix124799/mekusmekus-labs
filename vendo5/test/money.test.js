@@ -125,3 +125,16 @@ test('a credit code adds pesos of time at the rate, once, records the sale and t
   assert.equal(JSON.parse(credits.usedText()).mac, 'm1');
   assert.equal(money.redeemVoucher('m2', code).message, 'Invalid voucher');
 });
+
+test('adminPause pauses a consumable session without spending pauses; resume undoes it', () => {
+  const r = rig();
+  r.money.redeemVoucher('m1', r.make().code);
+  assert.deepEqual(r.money.adminPause('m1'), { ok: true, message: 'Paused' });
+  assert.equal(r.sessions.getSession('m1').paused, true);
+  assert.deepEqual(r.calls.filter((c) => c[0] === 'revoke'), [['revoke', 'm1']]);
+  assert.equal(r.money.resume('m1').ok, true);
+  const bad = rig({ revokeThrows: true });
+  bad.money.redeemVoucher('m1', bad.make().code);
+  assert.equal(bad.money.adminPause('m1').ok, false);
+  assert.equal(bad.sessions.getSession('m1').paused, undefined, 'a failed revoke leaves the session running');
+});
