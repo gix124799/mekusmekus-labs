@@ -224,3 +224,28 @@ test('closing the popup frees the vendo after the grace time, not the whole coun
   assert.equal(setPendingPayer('m2', 3600, 62000, 'sub1'), false);
   assert.equal(setPendingPayer('m2', 4600, 62000, 'sub1'), true, 'free 1 s after the last activity');
 });
+
+test('POST /api/resume-code moves the time to this phone when it has none, and returns its current code', async () => {
+  const { createSessionStore } = require('../lib/session');
+  const sessions = createSessionStore('/nonexistent/s.json');
+  sessions.load();
+  sessions.addCredit('old', 5, 1, Date.now());
+  const code = sessions.getSession('old').resumeCode;
+  const moves = [];
+  const money = {
+    blocked: () => false,
+    moveSession: (mac, c) => { moves.push([mac, c]); return c === code && sessions.move('old', mac) ? { ok: true } : null; },
+  };
+  const { server } = createServer({ session: sessions, arp: fakeArp('new'), ratePesosPerMinute: 1, money });
+  await new Promise((r) => server.listen(0, r));
+  const post = (body) => new Promise((resolve) => {
+    const req = http.request({ port: server.address().port, path: '/api/resume-code', method: 'POST', headers: { 'Content-Type': 'application/json' } }, (res) => { let b = ''; res.on('data', (c) => (b += c)); res.on('end', () => resolve(JSON.parse(b))); });
+    req.end(JSON.stringify(body));
+  });
+  try {
+    assert.deepEqual(await post({ code }), { code, moved: true });
+    assert.deepEqual(await post({ code: 'AAAAAAAA' }), { code, moved: false }, 'a phone with time is not moved onto');
+    assert.equal(moves.length, 1);
+    assert.deepEqual(await post({}), { code, moved: false });
+  } finally { server.close(); }
+});

@@ -203,7 +203,7 @@ function createMoney({ vouchers, credits, access, clientLog, ratePesosPerMinute 
     return { ok: true, message: 'Success' };
   }
 
-  return { redeemVoucher, pause, adminPause, resume, endSession, createSession, blocked };
+  return { redeemVoucher, moveSession, pause, adminPause, resume, endSession, createSession, blocked };
 }
 
 module.exports = { createMoney, LOCK_AFTER, LOCK_MS };

@@ -202,3 +202,10 @@ test('if the new MAC cannot be allowed, the session stays on the old one', () =>
   assert.equal(bad.sessions.getSession('m2'), undefined);
   assert.ok(code);
 });
+
+test('moveSession is exported for the automatic (browser token) move', () => {
+  const r = rig();
+  r.money.redeemVoucher('m1', r.make().code);
+  assert.equal(r.money.moveSession('m2', r.sessions.getSession('m1').resumeCode).ok, true);
+  assert.equal(r.money.moveSession('m3', 'ZZZZZZZZ'), null);
+});

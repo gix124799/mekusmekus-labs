@@ -222,6 +222,21 @@ function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, ch
       readJsonBody(req).then((b) => reply(res, money.redeemVoucher(mac, b.code)));
       return;
     }
+    // The portal page's own script keeps the resume code in the browser; a phone back with a new random MAC
+    // posts it and gets its time back without typing anything (the Logs-page code stays the manual way).
+    if (money && req.method === 'POST' && req.url === '/api/resume-code') {
+      readJsonBody(req).then((b) => {
+        const live = (m) => { const s = m && session.getSession(m); return s && (s.paused || s.expiresAt > Date.now()) ? s : null; };
+        let moved = false;
+        if (mac && !live(mac) && typeof b.code === 'string' && /^[A-Z0-9]{8}$/.test(b.code)) {
+          const r = money.moveSession(mac, b.code);
+          moved = !!r && r.ok;
+        }
+        const s = live(mac);
+        reply(res, { code: (s && s.resumeCode) || '', moved });
+      });
+      return;
+    }
     if (money && req.method === 'POST' && (req.url === '/api/pause' || req.url === '/api/resume')) {
       reply(res, req.url === '/api/pause' ? money.pause(mac) : money.resume(mac));
       return;
