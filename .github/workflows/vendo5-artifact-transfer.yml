@@ -1,0 +1,27 @@
+name: Vendo5 verified firmware transfer
+on:
+  push:
+    branches: [codex/vendo5-artifact-transfer-20261012]
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble and verify existing firmware
+        working-directory: firmware-transfer
+        run: |
+          cat image.part-* > vendo5-orangepi-one-bootfix-r3.img.gz
+          gzip -t vendo5-orangepi-one-bootfix-r3.img.gz
+          sha256sum --ignore-missing -c SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vendo5-orangepi-one-bootfix-r3
+          compression-level: 0
+          retention-days: 3
+          path: |
+            firmware-transfer/vendo5-orangepi-one-bootfix-r3.img.gz
+            firmware-transfer/SHA256SUMS.txt
+            firmware-transfer/BOOTFIX-REPORT.md
+            firmware-transfer/vendo5-bootfix-r3.patch

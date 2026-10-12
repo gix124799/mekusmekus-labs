@@ -1,0 +1,492 @@
+diff --git a/vendo5/etc-overlay/etc/config/firewall b/vendo5/etc-overlay/etc/config/firewall
+index 3a4227b..4e0e692 100644
+--- a/vendo5/etc-overlay/etc/config/firewall
++++ b/vendo5/etc-overlay/etc/config/firewall
+@@ -1,11 +1,9 @@
+ 
+ # Minimal OpenWrt firewall config. Zone/forwarding rules are
+-# intentionally NOT the standard "lan accept / wan reject, lan->wan
+-# forward" template — that would let every unpaid client straight
+-# through. All the actual gating lives in the custom nft ruleset
+-# (vendo5-firewall.nft), loaded below via `config include`, which
+-# replaces the default lan->wan forward with the MAC-allowlist policy
+-# lib/firewall.js's allow()/revoke() populate at runtime.
++# allow LAN->WAN through fw4 so it does not override the separate vendo5
++# MAC gate. An accept in one nft base chain is still subject to every other
++# base chain: unpaid clients remain blocked by vendo5's forward DROP policy.
++# Runtime allow/revoke operations populate that table's MAC set.
+ 
+ config defaults
+ 	option input 'ACCEPT'
+@@ -33,3 +31,8 @@ config include 'vendo5'
+ 	option path '/etc/vendo5-firewall.nft'
+ 	# a table of its own: fw4 would otherwise paste the file INSIDE its own table, which is a syntax error that stops the whole firewall
+ 	option position 'ruleset-append'
++
++# fw4 and vendo5 both run on the forward hook; both must allow paid traffic.
++config forwarding 'vendo5_lan_wan'
++	option src 'lan'
++	option dest 'wan'
+diff --git a/vendo5/etc-overlay/etc/vendo5-firewall.nft b/vendo5/etc-overlay/etc/vendo5-firewall.nft
+index c4c1072..d3c6179 100644
+--- a/vendo5/etc-overlay/etc/vendo5-firewall.nft
++++ b/vendo5/etc-overlay/etc/vendo5-firewall.nft
+@@ -26,6 +26,24 @@
+ # every rule below (and lib/system/shaper.js, which reads it) follows it. Rules stay pinned to that one port.
+ define WAN = "eth0"
+ 
++# Declare the base chains before flushing so first boot and subsequent fw4
++# reloads use the same atomic transaction. Preserve allowed/walled sets and
++# dynamic bwlimit rules; replace only static rules to remove stale WAN names.
++table inet vendo5 {
++    chain dstnat {
++        type nat hook prerouting priority dstnat; policy accept;
++    }
++    chain forward {
++        type filter hook forward priority filter; policy drop;
++    }
++    chain postrouting {
++        type nat hook postrouting priority srcnat; policy accept;
++    }
++}
++flush chain inet vendo5 dstnat
++flush chain inet vendo5 forward
++flush chain inet vendo5 postrouting
++
+ table inet vendo5 {
+ 	set allowed {
+ 		type ether_addr
+@@ -50,8 +68,9 @@ table inet vendo5 {
+ 
+ 	chain forward {
+ 		type filter hook forward priority filter; policy drop;
+-		# replies to what a paid client started: without this the WAN->LAN half of every connection is dropped here
+-		ct state established,related accept
++		# Only WAN replies bypass the client-MAC check. LAN traffic must still
++		# match the live allowed/walled sets, including established TCP flows.
++		iifname $WAN oifname "br-lan" ct state established,related accept
+ 		iifname "br-lan" oifname $WAN ether saddr @allowed accept
+ 		iifname "br-lan" oifname $WAN ip daddr @walled accept
+ 		# unpaid traffic to the portal's own app (port 3000) and to the
+diff --git a/vendo5/lib/store/clientlog.js b/vendo5/lib/store/clientlog.js
+index da23026..6492a62 100644
+--- a/vendo5/lib/store/clientlog.js
++++ b/vendo5/lib/store/clientlog.js
+@@ -5,6 +5,11 @@ const { MAC, noColons } = require('./clients');
+ const MAX_LINES = 500;
+ const pad = (n) => String(n).padStart(2, '0');
+ 
++function formatClientLogLine(d, text) {
++  const h = d.getHours();
++  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(h % 12 || 12)}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${h < 12 ? 'am' : 'pm'} ${String(text).replace(/[\r\n]+/g, ' ')}`;
++}
++
+ // Per-device log, one file per MAC; lines "DD/MM/YYYY hh:mm:ss am|pm text" (the Devices page parses that).
+ function createClientLog({ dir, now = () => new Date() }) {
+   const file = (key) => path.join(dir, `${key}.txt`);
+@@ -14,9 +19,7 @@ function createClientLog({ dir, now = () => new Date() }) {
+       const key = keyOf(String(mac).toLowerCase());
+       if (!key) return false;
+       try {
+-        const d = now();
+-        const h = d.getHours();
+-        const line = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(h % 12 || 12)}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${h < 12 ? 'am' : 'pm'} ${String(text).replace(/[\r\n]+/g, ' ')}`;
++        const line = formatClientLogLine(now(), text);
+         fs.mkdirSync(dir, { recursive: true });
+         let lines = [];
+         try { lines = fs.readFileSync(file(key), 'utf8').split('\n').filter(Boolean); } catch { /* first line */ }
+@@ -40,4 +43,4 @@ function createClientLog({ dir, now = () => new Date() }) {
+   };
+ }
+ 
+-module.exports = { createClientLog };
++module.exports = { createClientLog, formatClientLogLine };
+diff --git a/vendo5/lib/wire/portal.js b/vendo5/lib/wire/portal.js
+index a5c5bc0..08cfde5 100644
+--- a/vendo5/lib/wire/portal.js
++++ b/vendo5/lib/wire/portal.js
+@@ -1,3 +1,4 @@
++const { formatClientLogLine } = require('../store/clientlog');
+ const { timeForPesos } = require('../money/rates');
+ const { dataBytes } = require('../money/limits');
+ 
+@@ -47,7 +48,9 @@ function createPortalHandlers({ sessions, money, ops, wallet, clients, settings,
+       const logs = clientLog.read(ctx.mac).data;
+       const s = sessions.getSession(ctx.mac);
+       const live = !!s && (s.paused || s.expiresAt > now());
+-      return live && s.resumeCode ? `${logs}Resume code: ${s.resumeCode} - if your phone changes its MAC, enter this code in the voucher box to get your time back\n` : logs;
++      if (!live || !s.resumeCode) return logs;
++      const hint = formatClientLogLine(new Date(now()), `Resume code: ${s.resumeCode} - if your phone changes its MAC, enter this code in the voucher box to get your time back`);
++      return `${logs}${logs && !logs.endsWith('\n') ? '\n' : ''}${hint}\n`;
+     }),
+     [K(2)]: guarded({}, (_p, ctx) => info(ctx.mac, ctx)),
+ 
+diff --git a/vendo5/scripts/build-image.sh b/vendo5/scripts/build-image.sh
+index 4504c8d..600d7ec 100755
+--- a/vendo5/scripts/build-image.sh
++++ b/vendo5/scripts/build-image.sh
+@@ -5,12 +5,15 @@ set -euo pipefail
+ cd "$(dirname "$0")/.."
+ BASE_GZ=${1:-$HOME/Downloads/orangepi-one.img.gz}
+ BASE_SHA=d4164f439472dea2485cef6df28745e47a092f38f71624e62c48c1951ff3181d  # uncompressed pristine image
+-OUT=build/vendo5-orangepi-one-test.img
++OUT=${OUT:-build/vendo5-orangepi-one-test.img}
+ ROOT_OFFSET=69206016  # partition 2 start (see reference/.../PARTITION_AND_FILE_INFO.json)
+ 
+ mkdir -p build
+ gunzip -ck "$BASE_GZ" > "$OUT"
+ echo "$BASE_SHA  $OUT" | sha256sum -c - >/dev/null || { echo "base image is not the pristine one" >&2; exit 1; }
++PRISTINE=$(mktemp build/pristine-verify.XXXXXX.img)
++trap 'rm -f "$PRISTINE"' EXIT
++cp --reflink=auto --sparse=always "$OUT" "$PRISTINE"
+ D="$OUT?offset=$ROOT_OFFSET"
+ 
+ CMD=build/debugfs.cmd
+@@ -26,10 +29,21 @@ CMD=build/debugfs.cmd
+   echo "write etc-overlay/etc/vendo5-firewall.nft /etc/vendo5-firewall.nft"
+   echo "write etc-overlay/etc/vendo5-netdetect.sh /etc/vendo5-netdetect.sh"
+   echo "set_inode_field /etc/vendo5-netdetect.sh mode 0100755"
++  echo "write etc-overlay/lib/preinit/80_vendo5_leds /lib/preinit/80_vendo5_leds"
++  echo "write etc-overlay/etc/uci-defaults/90-vendo5-leds /etc/uci-defaults/90-vendo5-leds"
++  echo "set_inode_field /etc/uci-defaults/90-vendo5-leds mode 0100755"
++  echo "rm /etc/init.d/firewall"
++  echo "write etc-overlay/etc/init.d/firewall /etc/init.d/firewall"
++  echo "set_inode_field /etc/init.d/firewall mode 0100755"
+   echo "write etc/init.d/vendo5 /etc/init.d/vendo5"
+   echo "set_inode_field /etc/init.d/vendo5 mode 0100755"
+   echo "symlink /etc/rc.d/S95vendo5 ../init.d/vendo5"
+ } > "$CMD"
+ debugfs -w -f "$CMD" "$D" > build/debugfs.log 2>&1
+-e2fsck -fn "$D" | tail -2
++# debugfs can return zero even when individual commands failed.
++if grep -Ei 'file not found|file exists|no space|command not found|usage:|while (opening|writing|reading)' build/debugfs.log; then
++  echo "debugfs command failed; image is not releasable" >&2
++  exit 1
++fi
++python3 scripts/verify-image.py "$PRISTINE" "$OUT"
+ sha256sum "$OUT" | tee "$OUT.sha256"
+diff --git a/vendo5/test/wire-portal.test.js b/vendo5/test/wire-portal.test.js
+index 788a77b..aca7bb1 100644
+--- a/vendo5/test/wire-portal.test.js
++++ b/vendo5/test/wire-portal.test.js
+@@ -38,3 +38,13 @@ test('the dashboard code field is the voucher code, else the resume code', () =>
+   sessions.addTime('m2', 60000, { code: 'VOUCH1' }, 100000);
+   assert.equal(call(h, 2, undefined, 'm2').code, 'VOUCH1');
+ });
++
++// The shipped browser Logs page parses a date on EVERY nonempty line.
++test('resume-code hint has the same parseable timestamp as a client log line', () => {
++  const { h, sessions } = setup();
++  sessions.addCredit('m1', 1, 1, 100000);
++  const logs = call(h, 0, undefined, 'm1');
++  const hint = logs.trim().split('\n').at(-1);
++  assert.match(hint, /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2} (am|pm) Resume code: /);
++  assert.equal(call(h, 0, undefined, 'm1'), logs, 'reading logs does not append another stored entry');
++});
+diff --git a/vendo5/scripts/verify-image.py b/vendo5/scripts/verify-image.py
+new file mode 100644
+index 0000000..905eb46
+--- /dev/null
++++ b/vendo5/scripts/verify-image.py
+@@ -0,0 +1,75 @@
++#!/usr/bin/env python3
++"""Read-only release gate: original boot bytes plus exact shipped app/config files."""
++import argparse, hashlib, json, pathlib, struct, subprocess, tempfile, zlib
++
++def digest(data): return hashlib.sha256(data).hexdigest()
++def fat_files(part):
++    bps=struct.unpack_from('<H',part,11)[0];spc=part[13]
++    reserved=struct.unpack_from('<H',part,14)[0];nf=part[16]
++    roots=struct.unpack_from('<H',part,17)[0];spf=struct.unpack_from('<H',part,22)[0]
++    root=(reserved+nf*spf)*bps;data=root+((roots*32+bps-1)//bps)*bps
++    result={}
++    for i in range(roots):
++        e=part[root+32*i:root+32*(i+1)]
++        if not e[0]:break
++        if e[0]==229 or e[11]==15 or e[11]&24:continue
++        name=e[:8].decode().strip();ext=e[8:11].decode().strip()
++        name=name+('.'+ext if ext else '')
++        c=struct.unpack_from('<H',e,26)[0];size=struct.unpack_from('<I',e,28)[0];out=b'';seen=set()
++        while 2<=c<65528:
++            assert c not in seen,'FAT cluster loop';seen.add(c)
++            out+=part[data+(c-2)*spc*bps:data+(c-1)*spc*bps]
++            c=struct.unpack_from('<H',part,reserved*bps+c*2)[0]
++        assert len(out)>=size,'truncated FAT file'
++        result[name]=out[:size]
++    return result
++
++def legacy_image(blob,kind):
++    header=blob[:64];assert len(header)==64
++    fields=struct.unpack('>7I4B32s',header)
++    assert fields[0]==0x27051956,'bad U-Boot magic'
++    assert fields[1]==zlib.crc32(header[:4]+b'\0'*4+header[8:])&0xffffffff,'bad header CRC'
++    assert len(blob)==64+fields[3],'bad U-Boot payload size'
++    assert fields[6]==zlib.crc32(blob[64:])&0xffffffff,'bad payload CRC'
++    assert fields[9]==kind,'wrong U-Boot image type'
++
++def main():
++    ap=argparse.ArgumentParser();ap.add_argument('base');ap.add_argument('candidate');args=ap.parse_args()
++    base=pathlib.Path(args.base);candidate=pathlib.Path(args.candidate)
++    assert base.stat().st_size==candidate.stat().st_size,'image size changed'
++    with base.open('rb') as bf,candidate.open('rb') as cf:
++        bm=bf.read(512);cm=cf.read(512);assert bm==cm and cm[510:]==b'\x55\xaa','MBR mismatch'
++        parts=[struct.unpack_from('<II',cm,446+i*16+8) for i in range(4)]
++        bootstart,bootlen=parts[0];rootstart,rootlen=parts[1]
++        assert rootstart*512==69206016,'unexpected root offset'
++        rootend=(rootstart+rootlen)*512
++        bf.seek(0);cf.seek(0);before=cf.read(rootstart*512)
++        assert before==bf.read(rootstart*512),'bootloader/boot partition changed'
++        bf.seek(rootend);cf.seek(rootend);assert bf.read()==cf.read(),'source trailer changed'
++        cf.seek(bootstart*512);fat=fat_files(cf.read(bootlen*512))
++    for name,kind in [('BOOT.SCR',6),('UIMAGE',2)]:legacy_image(fat[name],kind)
++    assert fat['DTB'][:4]==b'\xd0\x0d\xfe\xed' and b'xunlong,orangepi-one\0' in fat['DTB'],'wrong board DTB'
++    assert b'root=PARTUUID=${uuid}' in fat['BOOT.SCR'],'boot root reference changed'
++    offset=f'{candidate}?offset={rootstart*512}'
++    subprocess.run(['e2fsck','-fn',offset],check=True)
++    with tempfile.TemporaryDirectory(prefix='vendo5-image-verify-') as tmp:
++        def dump(image,src,dest):
++            result=subprocess.run(['debugfs','-R',f'dump {src} {dest}',f'{image}?offset={rootstart*512}'],capture_output=True,text=True)
++            assert pathlib.Path(dest).is_file(),f'missing {src}: {result.stderr}'
++        for i,src in enumerate(['/sbin/init','/sbin/procd','/usr/bin/node','/etc/shadow','/etc/inittab','/etc/rc.common','/etc/init.d/boot','/etc/init.d/led','/etc/config/system']):
++            a=pathlib.Path(tmp)/f'base-{i}';b=pathlib.Path(tmp)/f'candidate-{i}'
++            dump(base,src,a);dump(candidate,src,b);assert a.read_bytes()==b.read_bytes(),f'protected file changed: {src}'
++        subprocess.run(['debugfs','-R',f'rdump /opt/vendo5 {tmp}',offset],check=True,capture_output=True)
++        entries=json.loads(subprocess.check_output(['node','-e',"console.log(JSON.stringify(require('./scripts/image-commands').entriesFor(process.cwd())))"],text=True))
++        for item in entries:
++            actual=pathlib.Path(tmp)/item['dest'].removeprefix('/opt/')
++            assert actual.is_file() and actual.read_bytes()==pathlib.Path(item['src']).read_bytes(),f'bad shipped file: {item["dest"]}'
++        for src,imagepath in [('etc/init.d/vendo5','/etc/init.d/vendo5'),('etc-overlay/etc/vendo5-netdetect.sh','/etc/vendo5-netdetect.sh'),('etc-overlay/etc/vendo5-firewall.nft','/etc/vendo5-firewall.nft'),('etc-overlay/etc/init.d/firewall','/etc/init.d/firewall'),('etc-overlay/lib/preinit/80_vendo5_leds','/lib/preinit/80_vendo5_leds'),('etc-overlay/etc/uci-defaults/90-vendo5-leds','/etc/uci-defaults/90-vendo5-leds')]+[(f'etc-overlay/etc/config/{n}',f'/etc/config/{n}') for n in ['network','dhcp','firewall']]:
++            target=pathlib.Path(tmp)/'config-check';target.unlink(missing_ok=True);dump(candidate,imagepath,target)
++            assert target.read_bytes()==pathlib.Path(src).read_bytes(),f'bad config: {imagepath}'
++        service=subprocess.check_output(['debugfs','-R','stat /etc/init.d/vendo5',offset],stderr=subprocess.DEVNULL,text=True)
++        assert '0755' in service,'service not executable'
++        rc=subprocess.check_output(['debugfs','-R','stat /etc/rc.d/S95vendo5',offset],stderr=subprocess.DEVNULL,text=True)
++        assert '../init.d/vendo5' in rc,'missing autostart'
++    print(json.dumps({'status':'PASS','shipped_files':len(entries),'boot_region_sha256':digest(before),'image_bytes':candidate.stat().st_size,'hardware_boot':'NOT YET VERIFIED'},indent=2))
++if __name__=='__main__':main()
+diff --git a/vendo5/scripts/firewall-integration-netns-test.sh b/vendo5/scripts/firewall-integration-netns-test.sh
+new file mode 100644
+index 0000000..eceed2d
+--- /dev/null
++++ b/vendo5/scripts/firewall-integration-netns-test.sh
+@@ -0,0 +1,92 @@
++#!/bin/bash
++# Real-kernel check of the bandwidth limits, no hardware needed: a private network namespace (unprivileged) with a
++# fake LAN client and WAN host, the real vendo5 nft ruleset, and the shaper. Prints a 3 MB download unlimited, then
++# with an 8 Mbit/s (1 MB/s) limit, and the byte counters.   Run: unshare -Urn bash scripts/shaper-netns-test.sh
++set -e
++trap 'kill ${CP:-} ${WP:-} $(jobs -p) 2>/dev/null; true' EXIT
++R=$(cd "$(dirname "$0")/.." && pwd); J=$(mktemp -d)
++ip link set lo up
++unshare -n sleep 600 >/dev/null 2>&1 & CP=$!
++unshare -n sleep 600 >/dev/null 2>&1 & WP=$!
++sleep 0.5
++ip link add br-lan type veth peer name c0; ip link set c0 netns $CP
++ip link add eth0 type veth peer name w0; ip link set w0 netns $WP
++ip addr add 10.0.0.1/24 dev br-lan; ip link set br-lan up
++ip addr add 10.9.0.1/24 dev eth0; ip link set eth0 up
++nsenter -t $CP -n sh -c "ip link set c0 address aa:bb:cc:dd:ee:01; ip addr add 10.0.0.5/24 dev c0; ip link set c0 up; ip link set lo up; ip route add default via 10.0.0.1"
++nsenter -t $WP -n sh -c "ip addr add 10.9.0.2/24 dev w0; ip link set w0 up; ip link set lo up; ip route add default via 10.9.0.1"
++sysctl -qw net.ipv4.ip_forward=1
++# Reproduce the second forward base chain generated by OpenWrt fw4.
++# Its effective LAN->WAN verdict follows the shipped UCI config; the MAC
++# gate in the separate vendo5 table must still enforce unpaid/revoked clients.
++python3 - "$R/etc-overlay/etc/config/firewall" "$J/fw4.nft" <<'FW4'
++import sys,re,pathlib
++config=pathlib.Path(sys.argv[1]).read_text()
++blocks=re.split(r'^config ', config, flags=re.M)
++defaults=next(b for b in blocks if b.startswith('defaults'))
++policy=re.search(r"option forward '([^']+)'",defaults)[1].lower()
++allow=any(b.startswith('forwarding') and "option src 'lan'" in b and "option dest 'wan'" in b for b in blocks)
++rules='ct state established,related accept;'
++if allow: rules+=' iifname "br-lan" oifname "eth0" accept;'
++pathlib.Path(sys.argv[2]).write_text('table inet fw4 { chain forward { type filter hook forward priority filter; policy '+policy+'; '+rules+' }\n}\n')
++FW4
++nft -f "$J/fw4.nft"
++nft -f $R/etc-overlay/etc/vendo5-firewall.nft
++nft add element inet vendo5 allowed '{ aa:bb:cc:dd:ee:01 }'
++head -c 3000000 /dev/zero > $J/blob
++(cd $J && nsenter -t $WP -n python3 -m http.server 8088 >/dev/null 2>&1 &) ; sleep 1
++ping -c1 -W1 10.0.0.5 >/dev/null || true
++echo "--- no limit"
++nsenter -t $CP -n python3 - <<PY
++import time,urllib.request
++t=time.time(); n=len(urllib.request.urlopen('http://10.9.0.2:8088/blob',timeout=30).read()); print('download', n, 'bytes in %.1fs'%(time.time()-t))
++PY
++# An already-established TCP flow must stop when its MAC is revoked.
++nsenter -t $WP -n python3 -u - <<'SERVER' >/dev/null 2>&1 &
++import socket
++s=socket.socket();s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);s.bind(('10.9.0.2',9999));s.listen()
++c,_=s.accept()
++while True:
++ data=c.recv(1024)
++ if not data:break
++ c.sendall(data)
++SERVER
++sleep 0.5
++ROUTER_PID=$$
++nsenter -t $CP -n python3 - "$ROUTER_PID" <<'ESTABLISHED'
++import socket,subprocess,sys
++s=socket.create_connection(('10.9.0.2',9999),timeout=2)
++s.sendall(b'before');assert s.recv(1024)==b'before'
++subprocess.run(['nsenter','-t',sys.argv[1],'-n','nft','delete','element','inet','vendo5','allowed','{ aa:bb:cc:dd:ee:01 }'],check=True)
++s.sendall(b'after')
++try:
++ data=s.recv(1024)
++ assert not data, 'FAIL: revoked client still uses an established TCP connection'
++except socket.timeout:
++ print('PASS: revocation also blocks established TCP traffic')
++finally:
++ s.close()
++ subprocess.run(['nsenter','-t',sys.argv[1],'-n','nft','add','element','inet','vendo5','allowed','{ aa:bb:cc:dd:ee:01 }'],check=True)
++ESTABLISHED
++
++echo "--- with 8M download limit (1,000,000 B/s)"
++node -e "
++const {execFileSync}=require('child_process');const {createShaper}=require('$R/lib/system/shaper');
++const A='aa:bb:cc:dd:ee:01';const sess={[A]:{expiresAt:Date.now()+9e5,upload:'8M',download:'8M',max_data_limit:'1M'}};
++global.sh=createShaper({runCommand:(a)=>execFileSync(a[0],a.slice(1),{encoding:'utf8'}),sessions:{all:()=>sess,getSession:(m)=>sess[m]},arp:{neighbors:()=>({[A]:{ip:'10.0.0.5'}})},file:'$J/e2e-limits.nft',onCap:(m)=>console.log('CAP reached for',m)});
++sh.tick();
++"
++nsenter -t $CP -n python3 - <<PY
++import time,urllib.request
++t=time.time(); n=len(urllib.request.urlopen('http://10.9.0.2:8088/blob',timeout=60).read()); print('download', n, 'bytes in %.1fs'%(time.time()-t))
++PY
++echo "--- after revoke (not allowed): the same download must fail"
++nft delete element inet vendo5 allowed '{ aa:bb:cc:dd:ee:01 }'
++nsenter -t $CP -n python3 - <<PY
++import urllib.request
++try:
++    urllib.request.urlopen('http://10.9.0.2:8088/blob', timeout=3).read(); print('FAIL: revoked client still got through')
++except Exception as e:
++    print('PASS: revoked client blocked (%s)' % type(e).__name__)
++PY
++nft list chain inet vendo5 bwlimit | grep -o 'comment.*\|bytes [0-9]*' | head -6
+diff --git a/vendo5/scripts/firewall-reload-netns-test.py b/vendo5/scripts/firewall-reload-netns-test.py
+new file mode 100644
+index 0000000..94a31c7
+--- /dev/null
++++ b/vendo5/scripts/firewall-reload-netns-test.py
+@@ -0,0 +1,26 @@
++#!/usr/bin/env python3
++# Run in a private network namespace, e.g. sudo unshare -n python3 scripts/firewall-reload-netns-test.py
++import json,pathlib,subprocess,tempfile
++source=pathlib.Path(__file__).resolve().parent.parent/'etc-overlay/etc/vendo5-firewall.nft'
++def nft(*args):return subprocess.check_output(['nft',*args],text=True)
++def state():return json.loads(nft('-j','list','table','inet','vendo5'))['nftables']
++nft('-f',str(source))
++nft('add','element','inet','vendo5','allowed','{ aa:bb:cc:dd:ee:01 }')
++nft('add','element','inet','vendo5','walled','{ 10.9.0.2 }')
++nft('add','rule','inet','vendo5','bwlimit','counter','comment','reload-regression')
++before=state();count=sum('rule' in item for item in before)
++nft('-f',str(source));after=state()
++assert sum('rule' in item for item in after)==count,'reload duplicated firewall rules'
++for name in ['allowed','walled']:
++ old=next(i['set'].get('elem') for i in before if i.get('set',{}).get('name')==name)
++ new=next(i['set'].get('elem') for i in after if i.get('set',{}).get('name')==name)
++ assert old==new,f'reload lost {name} entries'
++assert any(i.get('rule',{}).get('comment')=='reload-regression' for i in after),'reload lost bandwidth rules'
++with tempfile.TemporaryDirectory() as tmp:
++ p=pathlib.Path(tmp)/'new-wan.nft';p.write_text(source.read_text().replace('define WAN = "eth0"','define WAN = "eth9"'))
++ nft('-f',str(p))
++text=json.dumps(state())
++assert 'eth0' not in text,'old WAN rules survive reload'
++assert 'eth9' in text,'new WAN rules missing'
++assert sum('rule' in item for item in state())==count,'WAN change duplicated rules'
++print('PASS: reload preserves live sets and bandwidth rules, never duplicates rules, and removes old WAN rules')
+diff --git a/vendo5/test/boot-leds.test.js b/vendo5/test/boot-leds.test.js
+new file mode 100644
+index 0000000..47e4a83
+--- /dev/null
++++ b/vendo5/test/boot-leds.test.js
+@@ -0,0 +1,26 @@
++const test = require('node:test');
++const assert = require('node:assert/strict');
++const fs = require('node:fs');
++const os = require('node:os');
++const path = require('node:path');
++const { spawnSync } = require('node:child_process');
++const script = path.resolve(__dirname, '../etc-overlay/lib/preinit/80_vendo5_leds');
++function run(root) {
++  return spawnSync('sh', ['-c', 'boot_hook_add() { "$2"; }; . "$1"', 'test', script], {
++    env: { ...process.env, VENDO5_LED_ROOT: root }, encoding: 'utf8'
++  });
++}
++test('early boot enables the power LED and status heartbeat using the board LED devices', () => {
++  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v5-leds-'));
++  try {
++    for (const name of ['orangepi:green:pwr', 'orangepi:red:status']) {
++      fs.mkdirSync(path.join(root, name)); fs.writeFileSync(path.join(root, name, 'trigger'), 'none\n');
++    }
++    assert.equal(run(root).status, 0);
++    assert.equal(fs.readFileSync(path.join(root, 'orangepi:green:pwr/trigger'), 'utf8'), 'default-on\n');
++    assert.equal(fs.readFileSync(path.join(root, 'orangepi:red:status/trigger'), 'utf8'), 'heartbeat\n');
++  } finally { fs.rmSync(root, { recursive: true, force: true }); }
++});
++test('absent LED hardware does not abort preinit', () => {
++  assert.equal(run('/nonexistent/vendo5-leds').status, 0);
++});
+diff --git a/vendo5/etc-overlay/lib/preinit/80_vendo5_leds b/vendo5/etc-overlay/lib/preinit/80_vendo5_leds
+new file mode 100644
+index 0000000..516b198
+--- /dev/null
++++ b/vendo5/etc-overlay/lib/preinit/80_vendo5_leds
+@@ -0,0 +1,14 @@
++#!/bin/sh
++# Orange Pi One kernel LED names, verified against the original DTB/runtime.
++# A missing LED must never block boot. This runs before application startup.
++vendo5_boot_leds() {
++    local root=${VENDO5_LED_ROOT:-/sys/class/leds}
++    if [ -e "$root/orangepi:green:pwr/trigger" ]; then
++        echo default-on > "$root/orangepi:green:pwr/trigger" 2>/dev/null || true
++    fi
++    if [ -e "$root/orangepi:red:status/trigger" ]; then
++        echo heartbeat > "$root/orangepi:red:status/trigger" 2>/dev/null || true
++    fi
++    return 0
++}
++boot_hook_add preinit_main vendo5_boot_leds
+diff --git a/vendo5/etc-overlay/etc/uci-defaults/90-vendo5-leds b/vendo5/etc-overlay/etc/uci-defaults/90-vendo5-leds
+new file mode 100644
+index 0000000..adbd077
+--- /dev/null
++++ b/vendo5/etc-overlay/etc/uci-defaults/90-vendo5-leds
+@@ -0,0 +1,18 @@
++#!/bin/sh
++# Keep preinit's visible boot indication when the OpenWrt LED service starts.
++[ -d /sys/class/leds/orangepi:green:pwr ] || exit 0
++uci -q get system.vendo5_power >/dev/null || {
++    uci set system.vendo5_power=led
++    uci set system.vendo5_power.name='Power'
++    uci set system.vendo5_power.sysfs='orangepi:green:pwr'
++    uci set system.vendo5_power.trigger='default-on'
++    uci set system.vendo5_power.default='1'
++}
++uci -q get system.vendo5_status >/dev/null || {
++    uci set system.vendo5_status=led
++    uci set system.vendo5_status.name='System heartbeat'
++    uci set system.vendo5_status.sysfs='orangepi:red:status'
++    uci set system.vendo5_status.trigger='heartbeat'
++    uci set system.vendo5_status.default='1'
++}
++uci commit system
+diff --git a/vendo5/etc-overlay/etc/init.d/firewall b/vendo5/etc-overlay/etc/init.d/firewall
+new file mode 100644
+index 0000000..d30b3e6
+--- /dev/null
++++ b/vendo5/etc-overlay/etc/init.d/firewall
+@@ -0,0 +1,14 @@
++#!/bin/sh /etc/rc.common
++# OpenWrt firewall4 init restored from openwrt/firewall4 root/etc/init.d/firewall.
++START=19
++USE_PROCD=1
++QUIET=""
++service_triggers() {
++    procd_add_reload_trigger firewall
++    procd_add_reload_data_trigger firewall
++}
++restart() { fw4 restart; }
++start_service() { fw4 ${QUIET} start; }
++stop_service() { fw4 flush; }
++reload_service() { fw4 reload; }
++boot() { QUIET=-q; start; }
