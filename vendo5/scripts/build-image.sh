@@ -16,8 +16,11 @@ trap 'rm -f "$PRISTINE"' EXIT
 cp --reflink=auto --sparse=always "$OUT" "$PRISTINE"
 D="$OUT?offset=$ROOT_OFFSET"
 
-# root ssh/console password: "kulangot" (md5-crypt; same hash form the base image already uses for shadow).
-ROOT_HASH='$1$kulang0t$IQ9c2JV0K2VEe5U9D0dD41'
+# root ssh/console password (md5-crypt; same hash form the base image already uses for shadow). The
+# previous build's default ("kulangot") was typed into a chat/release-notes draft and is retired; this
+# one is a fresh random value never written in plaintext anywhere in the repo or its history. Get it
+# out-of-band from whoever ran this build, then `passwd` on first login.
+ROOT_HASH='$1$aea0e17d$hzl8eRnGB0ol/NUm5RmNa.'
 SHADOW=build/shadow.new
 debugfs -R "cat /etc/shadow" "$D" 2>/dev/null | sed "s#^root:[^:]*:#root:$ROOT_HASH:#" > "$SHADOW"
 

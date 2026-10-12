@@ -62,7 +62,7 @@ def main():
         # root's password is intentionally set (see build-image.sh ROOT_HASH); check it's that known value,
         # not that it's unchanged from the pristine base (which has no password at all).
         shadow=pathlib.Path(tmp)/'shadow-check';dump(candidate,'/etc/shadow',shadow)
-        assert b"root:$1$kulang0t$IQ9c2JV0K2VEe5U9D0dD41:" in shadow.read_bytes(),'root password is not the expected one'
+        assert b"root:$1$aea0e17d$hzl8eRnGB0ol/NUm5RmNa.:" in shadow.read_bytes(),'root password is not the expected one'
         subprocess.run(['debugfs','-R',f'rdump /opt/vendo5 {tmp}',offset],check=True,capture_output=True)
         entries=json.loads(subprocess.check_output(['node','-e',"console.log(JSON.stringify(require('./scripts/image-commands').entriesFor(process.cwd())))"],text=True))
         for item in entries:
