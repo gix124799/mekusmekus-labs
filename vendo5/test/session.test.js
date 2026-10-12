@@ -151,3 +151,57 @@ test('revoke does not call save() itself (caller\'s responsibility)', () => {
   const after = fs.readFileSync(file, 'utf8');
   assert.equal(before, after); // file unchanged -- revoke alone never touched disk
 });
+
+test('forced pause works on a consumable session and does not spend pauselimit', () => {
+  const s = createSessionStore(tmpFile());
+  s.load();
+  s.addTime('m1', 60000, { type: 'consumable' }, 1000);
+  assert.equal(s.pause('m1', 2000).ok, false, 'a customer cannot pause a consumable session');
+  assert.equal(s.pause('m1', 2000, { force: true }).ok, true);
+  assert.equal(s.getSession('m1').remainingMs, 59000);
+  s.resume('m1', 5000);
+  s.addTime('m2', 60000, { type: 'pausable', pauselimit: 1 }, 1000);
+  s.pause('m2', 2000, { force: true });
+  assert.equal(s.getSession('m2').pauselimit, 1);
+});
+
+test('freeze stops the clock of running sessions; thaw resumes only those', () => {
+  const s = createSessionStore(tmpFile());
+  s.load();
+  s.addTime('run', 60000, {}, 0);
+  s.addTime('mine', 60000, { type: 'pausable' }, 0);
+  s.pause('mine', 10000); // customer pause before the outage: 50000 left
+  assert.deepEqual(s.freeze(20000), ['run']);
+  assert.deepEqual(s.freeze(21000), [], 'freezing twice changes nothing');
+  assert.deepEqual(s.expireDue(500000), [], 'nobody runs out during an outage');
+  s.addCredit('run', 1, 1, 30000); // a coin during the outage: +60000
+  assert.deepEqual(s.thaw(600000), ['run']);
+  assert.equal(s.getSession('run').expiresAt, 600000 + 40000 + 60000);
+  assert.equal(s.getSession('run').outage, undefined);
+  assert.equal(s.getSession('mine').paused, true, 'a customer pause stays paused');
+  assert.equal(s.getSession('mine').remainingMs, 50000);
+  assert.deepEqual(s.thaw(700000), [], 'thaw with nothing frozen is a no-op');
+});
+
+test('a customer resume during the outage clears the outage mark', () => {
+  const s = createSessionStore(tmpFile());
+  s.load();
+  s.addTime('m1', 60000, {}, 0);
+  s.freeze(10000);
+  assert.equal(s.resume('m1', 20000).ok, true);
+  assert.equal(s.getSession('m1').outage, undefined);
+  assert.deepEqual(s.thaw(30000), []);
+});
+
+test('frozen sessions survive a save and load', () => {
+  const f = tmpFile();
+  const a = createSessionStore(f);
+  a.load();
+  a.addTime('m1', 60000, {}, 0);
+  a.freeze(10000);
+  a.save();
+  const b = createSessionStore(f);
+  b.load(999999999);
+  assert.deepEqual(b.thaw(1000000), ['m1']);
+  assert.equal(b.getSession('m1').expiresAt, 1000000 + 50000);
+});

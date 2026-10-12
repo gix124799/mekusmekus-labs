@@ -91,14 +91,15 @@ function createSessionStore(filePath) {
   }
 
   // Pause freezes the remaining time; only a pausable session with pauses left can pause.
-  function pause(mac, now = Date.now()) {
+  // force (admin): any live session, and no pause is spent.
+  function pause(mac, now = Date.now(), { force = false } = {}) {
     const s = sessions[mac];
     if (!s || !live(s, now) || s.paused) return { ok: false, reason: 'No active session' };
-    if (s.type !== 'pausable') return { ok: false, reason: 'This session cannot be paused' };
-    if (s.pauselimit !== undefined && s.pauselimit <= 0) return { ok: false, reason: 'No pauses left' };
+    if (!force && s.type !== 'pausable') return { ok: false, reason: 'This session cannot be paused' };
+    if (!force && s.pauselimit !== undefined && s.pauselimit <= 0) return { ok: false, reason: 'No pauses left' };
     s.remainingMs = Math.max(0, s.expiresAt - now);
     s.paused = true;
-    if (s.pauselimit !== undefined) s.pauselimit -= 1;
+    if (!force && s.pauselimit !== undefined) s.pauselimit -= 1;
     return { ok: true, session: s };
   }
 
@@ -108,7 +109,34 @@ function createSessionStore(filePath) {
     s.expiresAt = now + s.remainingMs;
     delete s.paused;
     delete s.remainingMs;
+    delete s.outage;
     return { ok: true, session: s };
+  }
+
+  // Internet outage: every running session stops its clock like a pause, marked so thaw resumes only these.
+  function freeze(now = Date.now()) {
+    const macs = [];
+    for (const [mac, s] of Object.entries(sessions)) {
+      if (s.paused || !live(s, now)) continue;
+      s.remainingMs = Math.max(0, s.expiresAt - now);
+      s.paused = true;
+      s.outage = true;
+      macs.push(mac);
+    }
+    return macs;
+  }
+
+  function thaw(now = Date.now()) {
+    const macs = [];
+    for (const [mac, s] of Object.entries(sessions)) {
+      if (!s.outage) continue;
+      s.expiresAt = now + s.remainingMs;
+      delete s.paused;
+      delete s.remainingMs;
+      delete s.outage;
+      macs.push(mac);
+    }
+    return macs;
   }
 
   // Undo helper for a failed firewall call: put a session back exactly as it was (null removes it).
@@ -127,7 +155,7 @@ function createSessionStore(filePath) {
     return { ...sessions };
   }
 
-  return { load, save, addCredit, addTime, pause, resume, restore, extend, getSession, isActive, expireDue, revoke, all };
+  return { load, save, addCredit, addTime, pause, resume, freeze, thaw, restore, extend, getSession, isActive, expireDue, revoke, all };
 }
 
 module.exports = { createSessionStore };
