@@ -57,6 +57,7 @@ test('GET / always serves the real page shell with the real insert-coin button',
   assert.equal(res.status, 200);
   assert.match(res.body, /insert coin/i);
   assert.match(res.body, /id="client-insert-coin"/);
+  assert.match(res.body, /\/theme\/banner\.jpg/);
   server.close();
 });
 
@@ -201,4 +202,25 @@ test('hasPendingPayer looks without refreshing the window', () => {
   setPendingPayer('m1', 1000, 5000);
   assert.equal(hasPendingPayer(5000), true);
   assert.equal(hasPendingPayer(6001), false, 'peeking at 5000 did not extend the 5 s window');
+});
+
+test('each vendo has its own pending payer: busy at one vendo does not block another', () => {
+  const { setPendingPayer, consumePendingPayer, hasPendingPayer } = createServer({ session: fakeSession(false), arp: fakeArp('m1'), ratePesosPerMinute: 1 });
+  assert.equal(setPendingPayer('m1', 1000, 5000, 'main'), true);
+  assert.equal(setPendingPayer('m2', 1000, 5000, 'main'), false, 'one phone at a time per vendo');
+  assert.equal(setPendingPayer('m2', 1000, 5000, 'sub1'), true, 'another vendo is free');
+  assert.equal(hasPendingPayer(2000, 'sub1'), true);
+  assert.equal(consumePendingPayer(2000, 'sub1'), 'm2');
+  assert.equal(consumePendingPayer(2000), 'm1', 'main is the default');
+});
+
+test('closing the popup frees the vendo after the grace time, not the whole countdown', () => {
+  const { setPendingPayer, releasePendingPayer, consumePendingPayer } = createServer({ session: fakeSession(false), arp: fakeArp('m1'), ratePesosPerMinute: 1 });
+  setPendingPayer('m1', 1000, 62000, 'sub1');
+  releasePendingPayer('m2', 2000, 1000, 'sub1'); // not the payer: nothing happens
+  assert.equal(setPendingPayer('m2', 2500, 62000, 'sub1'), false);
+  releasePendingPayer('m1', 3000, 1000, 'sub1');
+  assert.equal(consumePendingPayer(3500, 'sub1'), 'm1', 'a coin already falling is still theirs');
+  assert.equal(setPendingPayer('m2', 3600, 62000, 'sub1'), false);
+  assert.equal(setPendingPayer('m2', 4600, 62000, 'sub1'), true, 'free 1 s after the last activity');
 });

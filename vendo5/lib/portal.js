@@ -145,34 +145,39 @@ function reply(res, r) {
 }
 
 function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, chat, portal }) {
-  let pendingPayer = null; // { mac, at }
+  const pending = new Map(); // vendo id -> { mac, at, ttl }: who is inserting coins there
 
   // Ruling (code-review fix pass): don't clear on a successful consume —
   // touch (refresh) the window instead, so back-to-back coin pulses for
   // the same payer (plan's own Review Focus #1) keep finding them. Only
   // an actual TTL lapse with no intervening pulse frees the slot.
-  function consumePendingPayer(now = Date.now()) {
-    if (!pendingPayer) return null;
-    const { mac, at, ttl } = pendingPayer;
-    if (now - at > ttl) {
-      pendingPayer = null;
+  function consumePendingPayer(now = Date.now(), vendo = 'main') {
+    const p = pending.get(vendo);
+    if (!p) return null;
+    if (now - p.at > p.ttl) {
+      pending.delete(vendo);
       return null;
     }
-    pendingPayer = { mac, at: now, ttl };
-    return mac;
+    pending.set(vendo, { ...p, at: now });
+    return p.mac;
   }
 
-  // Is someone waiting to pay? A look only: the window is not refreshed.
-  const hasPendingPayer = (now = Date.now()) => !!pendingPayer && now - pendingPayer.at <= pendingPayer.ttl;
+  // Is someone waiting to pay at this vendo? A look only: the window is not refreshed.
+  const hasPendingPayer = (now = Date.now(), vendo = 'main') => { const p = pending.get(vendo); return !!p && now - p.at <= p.ttl; };
 
   // A different MAC may not steal an already-active pending-payer slot;
   // the same MAC always refreshes its own window.
-  function setPendingPayer(mac, now = Date.now(), ttl = PAY_INTENT_TTL_MS) {
-    if (pendingPayer && pendingPayer.mac !== mac && now - pendingPayer.at <= pendingPayer.ttl) {
-      return false;
-    }
-    pendingPayer = { mac, at: now, ttl };
+  function setPendingPayer(mac, now = Date.now(), ttl = PAY_INTENT_TTL_MS, vendo = 'main') {
+    const p = pending.get(vendo);
+    if (p && p.mac !== mac && now - p.at <= p.ttl) return false;
+    pending.set(vendo, { mac, at: now, ttl });
     return true;
+  }
+
+  // The popup closed: the slot stays theirs graceMs more (a coin already falling), then the next phone may tap.
+  function releasePendingPayer(mac, now = Date.now(), graceMs = 0, vendo = 'main') {
+    const p = pending.get(vendo);
+    if (p && p.mac === mac) pending.set(vendo, { mac, at: now, ttl: graceMs });
   }
 
   function clientMac(req) {
@@ -256,7 +261,7 @@ function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, ch
     res.end(clientPage());
   });
 
-  return { server, consumePendingPayer, setPendingPayer, hasPendingPayer };
+  return { server, consumePendingPayer, setPendingPayer, hasPendingPayer, releasePendingPayer };
 }
 
 module.exports = { createServer };
