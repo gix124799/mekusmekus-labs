@@ -22,6 +22,7 @@ function createPortalOps({ sessions, firewall, clients, credits, sales, settings
       sessions.addTime(mac, ms, { price: 0, type: 'consumable', ...(t.upload ? { upload: t.upload } : {}), ...(t.download ? { download: t.download } : {}) }, now());
       try { firewall.allow(mac); } catch { sessions.restore(mac, before); return 'Could not connect you, try again'; }
       clients.markTrial(mac);
+      sessions.getSession(mac).trial = true;
       trials.push(now());
       save();
       sys(`Free trial given to ${mac}`); clog(mac, 'Free trial');

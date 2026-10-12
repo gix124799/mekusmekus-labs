@@ -17,6 +17,7 @@ test('free trials are capped per hour for the whole vendo', () => {
   });
   const trial = { minutes: 5 };
   assert.equal(ops.trial('m1', trial), 'Connected');
+  assert.equal(sessions.getSession('m1').trial, true, 'marked so a paid session moving in may replace it');
   t += 60000;
   assert.equal(ops.trial('m2', trial), 'Connected');
   assert.equal(ops.trial('m3', trial), 'Free trial limit reached, try again later');

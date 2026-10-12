@@ -98,7 +98,7 @@ function createMoney({ vouchers, credits, access, clientLog, ratePesosPerMinute 
     return { ok: true, message: 'Success' };
   }
 
-  // A phone that changed its MAC (random MAC): its resume code, or the voucher code it ran, takes the time along.
+  // A phone that changed its MAC (random MAC): its resume code takes the time along.
   // null when the code belongs to no live session (then it is just a wrong code).
   function moveSession(mac, code) {
     const t = now();
@@ -115,11 +115,14 @@ function createMoney({ vouchers, credits, access, clientLog, ratePesosPerMinute 
         log(`Firewall refused ${mac}: ${e.message}`);
         return { ok: false, message: 'Could not connect you, try again' };
       }
+    } else {
+      try { firewall.revoke(mac); } catch { /* a replaced free trial may have let it through */ }
     }
     try { firewall.revoke(from); } catch { /* not in the allowed set */ }
     save();
     log(`Session moved from ${from} to ${mac} (resume code)`);
     clog(mac, `Session moved here from ${from}`);
+    clog(from, `Session moved to another device (${mac}) with the resume code`);
     wrong.delete(mac);
     return { ok: true, message: 'Success' };
   }

@@ -146,19 +146,20 @@ function createSessionStore(filePath) {
     return macs;
   }
 
-  // The live session a resume code (or the voucher code it runs) belongs to.
+  // The live session a resume code belongs to. Not voucher codes: they are printed and can be short to guess.
   function findByCode(code, now = Date.now()) {
     for (const [mac, s] of Object.entries(sessions)) {
-      if (live(s, now) && (s.resumeCode === code || s.code === code)) return mac;
+      if (live(s, now) && s.resumeCode === code) return mac;
     }
     return null;
   }
 
-  // A phone that came back with a new MAC: the whole session goes with it.
+  // A phone that came back with a new MAC: the whole session goes with it. A free trial the phone took on its
+  // new MAC meanwhile is replaced; any other running session there is not.
   function move(from, to, now = Date.now()) {
     const s = sessions[from];
     if (from === to || !s || !live(s, now)) return false;
-    if (sessions[to] && live(sessions[to], now)) return false;
+    if (sessions[to] && live(sessions[to], now) && !sessions[to].trial) return false;
     sessions[to] = { ...s, mac: to };
     delete sessions[from];
     return true;

@@ -232,13 +232,12 @@ test('sessions saved before resume codes existed get one on load', () => {
   assert.match(s.getSession('m1').resumeCode, CODE);
 });
 
-test('findByCode finds a live session by resume code or voucher code, not an expired one', () => {
+test('findByCode finds a live session by resume code, not an expired one', () => {
   const s = createSessionStore(tmpFile());
   s.load();
   s.addTime('m1', 60000, { code: 'VOUCH1' }, 0);
   const rc = s.getSession('m1').resumeCode;
   assert.equal(s.findByCode(rc, 1000), 'm1');
-  assert.equal(s.findByCode('VOUCH1', 1000), 'm1');
   assert.equal(s.findByCode('NOPE2345', 1000), null);
   assert.equal(s.findByCode(rc, 61000), null, 'expired');
 });
@@ -268,4 +267,15 @@ test('move refuses when the source is not live or the target already has time', 
   assert.equal(s.move('a', 'b', 1000), false);
   assert.equal(s.move('a', 'a', 1000), false);
   assert.equal(s.move('a', 'c', 61000), false, 'expired');
+});
+
+test('only the resume code finds a session (a printed voucher code does not), and a trial can be replaced', () => {
+  const s = createSessionStore(tmpFile());
+  s.load();
+  s.addTime('m1', 60000, { code: 'VOUCH1' }, 0);
+  assert.equal(s.findByCode('VOUCH1', 1000), null);
+  s.addTime('t1', 60000, {}, 0);
+  s.getSession('t1').trial = true;
+  assert.equal(s.move('m1', 't1', 1000), true);
+  assert.equal(s.getSession('t1').code, 'VOUCH1');
 });

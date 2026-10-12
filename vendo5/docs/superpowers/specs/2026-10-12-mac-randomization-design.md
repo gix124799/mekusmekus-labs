@@ -22,14 +22,16 @@ the per-MAC wrong-code lock can be dodged by changing MAC.
 - `@portal-2` `code` field: the voucher code when there is one, else the resume code (the page may show it).
 
 **Taking the time to a new MAC.** In `money.redeemVoucher`, when the code is not a voucher and not a credit
-code, it is looked up as a resume code. Also a voucher code that was already used finds the session that is
-running it. Then, if that session is live on a *different* MAC:
-- refused when the new MAC is blocked, or already has a live session (`This device already has time`);
+code, it is looked up as a resume code. Only the resume code: voucher codes are printed on slips and can be 4
+characters, so a used voucher code stays dead (review fix). Then, if that session is live on a *different* MAC:
+- refused when the new MAC is blocked, or already has a live session (`This device already has time`), except
+  a free trial taken on the new MAC meanwhile, which the paid session replaces;
 - `sessions.move(oldMac, newMac)` moves the whole session object (time, paused/outage state, limits, data used,
   codes) to the new MAC;
 - firewall: `revoke(oldMac)` (errors ignored, it may not be in the set), `allow(newMac)` unless the session is
-  paused; if `allow` fails the move is undone;
-- mainlog `Session moved from <old> to <new> (resume code)`, client log line on the new MAC, `Connected`.
+  paused or disconnected (then `revoke(newMac)`, in case a replaced trial let it through); if `allow` fails the
+  move is undone;
+- mainlog `Session moved from <old> to <new> (resume code)`, a client log line on both MACs, `Success`.
 A wrong code still counts toward the existing per-MAC lock.
 
 **Not moved:** wallet credit and points (they stay on the old MAC). shortcut: move them too if customers ask.

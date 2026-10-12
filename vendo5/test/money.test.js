@@ -34,12 +34,7 @@ test('redeeming a voucher gives time, allows the MAC, consumes the code, records
   assert.equal(r.vouchers.get(v.code), null);
   assert.deepEqual(r.sales.all().map((s) => [s.kind, s.amount, s.mac, s.code, s.owner]), [['voucher', 10, 'm1', v.code, 'Juan']]);
   assert.match(r.lines[0], /^voucher\|Voucher .* used by m1: 600s$/);
-  const left = r.sessions.getSession('m1').expiresAt;
-  assert.equal(r.money.redeemVoucher('m2', v.code).ok, true, 'a used code only moves its running session (MAC change)');
-  assert.equal(r.sessions.getSession('m2').expiresAt, left, 'no new time');
-  assert.equal(r.sales.all().length, 1, 'no second sale');
-  r.tick(600000);
-  assert.equal(r.money.redeemVoucher('m3', v.code).message, 'Invalid voucher', 'once its time is over the code is gone');
+  assert.equal(r.money.redeemVoucher('m2', v.code).message, 'Invalid voucher', 'a used code is gone (it is printed and short: it must not move a running session)');
 });
 
 test('a second voucher on a live session adds time and keeps one sale each', () => {
@@ -157,12 +152,17 @@ test('a resume code moves the time to the new MAC: old revoked, new allowed, log
   assert.ok(r.lines.some((l) => /Session moved from aa:aa:aa:aa:aa:01 to aa:aa:aa:aa:aa:02/.test(l)));
 });
 
-test('the used voucher code also brings the session along', () => {
+test('a phone that took a free trial on its new MAC can still bring its paid time over', () => {
   const r = rig();
-  const v = r.make();
-  r.money.redeemVoucher('m1', v.code);
-  assert.equal(r.money.redeemVoucher('m2', v.code).ok, true);
-  assert.ok(r.sessions.getSession('m2'));
+  r.money.redeemVoucher('m1', r.make().code);
+  const paid = r.sessions.getSession('m1');
+  r.money.adminPause('m1');
+  r.sessions.addTime('m2', 300000, { price: 0 }, r.now());
+  r.sessions.getSession('m2').trial = true; // as portal-ops marks it
+  r.calls.length = 0;
+  assert.equal(r.money.redeemVoucher('m2', paid.resumeCode).ok, true);
+  assert.equal(r.sessions.getSession('m2').resumeCode, paid.resumeCode, 'the paid session replaced the trial');
+  assert.deepEqual(r.calls.filter((c) => c[0] !== 'save'), [['revoke', 'm2'], ['revoke', 'm1']], 'paused: the trial\'s allow is taken back');
 });
 
 test('a move is refused when the new device already has time, or it is the same device', () => {
