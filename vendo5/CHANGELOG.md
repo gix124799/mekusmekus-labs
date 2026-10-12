@@ -2,6 +2,12 @@
 
 ## v1.0.0 — 2026-10-13 (first stable release)
 
+### Added since initial tag
+- Second build target: `scripts/build-image-x86.sh` for the vendor's x86_64 mini PC, meant as a central
+  controller for Orange Pi sub-vendos (no coin GPIO). Its VLAN network config is left as shipped — real
+  switch hardware, unlike the bare Orange Pi One's USB-adapter workaround. `scripts/verify-image.py`
+  gained a `--target arm|x86` flag to gate each image's release the right way.
+
 First image built and verified end-to-end on real Orange Pi One hardware.
 
 ### Highlights

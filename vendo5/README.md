@@ -5,22 +5,29 @@ dashboard, and OpenWrt network/firewall glue. Replaces the original licensed `wi
 
 ## Hardware
 
-- Orange Pi One (Allwinner H3), on-board Ethernet = WAN.
-- USB-to-Ethernet adapter = LAN, bridged as `br-lan` (`10.0.0.1/19`).
-- A separate standalone access point (AP/bridge mode, no DHCP of its own) plugged into the LAN port.
-- Coin acceptor on GPIO 12, its power relay on GPIO 11 (see `config/vendo.json`).
+Two supported targets:
+
+- **Orange Pi One** (Allwinner H3/ARM) — on-board Ethernet = WAN, USB-to-Ethernet adapter = LAN, bridged
+  as `br-lan` (`10.0.0.1/19`). A separate standalone access point (AP/bridge mode, no DHCP of its own)
+  plugged into the LAN port. Coin acceptor on GPIO 12, its power relay on GPIO 11 (see `config/vendo.json`).
+  This is the per-location box with a customer-facing portal.
+- **x86_64 mini PC** (the vendor's own box, built-in VLAN switch chip) — central controller role: no coin
+  acceptor, manages multiple Orange Pi sub-vendos over the signed poll protocol (`lib/subvendo.js`). Its
+  `/etc/config/network` is left exactly as shipped (the switch's VLAN ports already feed `br-lan`
+  correctly); only the firewall/dhcp/app layer is swapped in.
 
 Full pre-flight list: `docs/hardware-checklist.md`.
 
 ## Build an image
 
 ```
-scripts/build-image.sh [path/to/orangepi-one.img.gz]
+scripts/build-image.sh [path/to/orangepi-one.img.gz]        # Orange Pi One (ARM)
+scripts/build-image-x86.sh [path/to/x86_64-efi.img.gz]       # x86_64 mini PC
 ```
 
 Patches a pristine OpenWrt base image with the app, UI, config, and firewall rules (no root needed —
-uses `debugfs`), then runs `scripts/verify-image.py` as a release gate. Output: `build/<name>.img` plus
-a `.sha256` next to it.
+uses `debugfs`), then runs `scripts/verify-image.py --target arm|x86` as a release gate. Output:
+`build/<name>.img` plus a `.sha256` next to it.
 
 ## Flash and first boot
 

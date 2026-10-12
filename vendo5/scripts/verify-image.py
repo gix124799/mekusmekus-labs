@@ -33,23 +33,38 @@ def legacy_image(blob,kind):
     assert fields[6]==zlib.crc32(blob[64:])&0xffffffff,'bad payload CRC'
     assert fields[9]==kind,'wrong U-Boot image type'
 
+ROOT_OFFSET={'arm':69206016,'x86':67371008}
+
 def main():
-    ap=argparse.ArgumentParser();ap.add_argument('base');ap.add_argument('candidate');args=ap.parse_args()
+    ap=argparse.ArgumentParser();ap.add_argument('base');ap.add_argument('candidate')
+    ap.add_argument('--target',choices=['arm','x86'],default='arm')
+    args=ap.parse_args()
     base=pathlib.Path(args.base);candidate=pathlib.Path(args.candidate)
     assert base.stat().st_size==candidate.stat().st_size,'image size changed'
+    rootstart=ROOT_OFFSET[args.target]//512
     with base.open('rb') as bf,candidate.open('rb') as cf:
-        bm=bf.read(512);cm=cf.read(512);assert bm==cm and cm[510:]==b'\x55\xaa','MBR mismatch'
-        parts=[struct.unpack_from('<II',cm,446+i*16+8) for i in range(4)]
-        bootstart,bootlen=parts[0];rootstart,rootlen=parts[1]
-        assert rootstart*512==69206016,'unexpected root offset'
-        rootend=(rootstart+rootlen)*512
-        bf.seek(0);cf.seek(0);before=cf.read(rootstart*512)
-        assert before==bf.read(rootstart*512),'bootloader/boot partition changed'
-        bf.seek(rootend);cf.seek(rootend);assert bf.read()==cf.read(),'source trailer changed'
-        cf.seek(bootstart*512);fat=fat_files(cf.read(bootlen*512))
-    for name,kind in [('BOOT.SCR',6),('UIMAGE',2)]:legacy_image(fat[name],kind)
-    assert fat['DTB'][:4]==b'\xd0\x0d\xfe\xed' and b'xunlong,orangepi-one\0' in fat['DTB'],'wrong board DTB'
-    assert b'root=PARTUUID=${uuid}' in fat['BOOT.SCR'],'boot root reference changed'
+        if args.target=='arm':
+            bm=bf.read(512);cm=cf.read(512);assert bm==cm and cm[510:]==b'\x55\xaa','MBR mismatch'
+            parts=[struct.unpack_from('<II',cm,446+i*16+8) for i in range(4)]
+            bootstart,bootlen=parts[0];rootstart2,rootlen=parts[1]
+            assert rootstart2==rootstart,'unexpected root offset'
+            rootend=(rootstart+rootlen)*512
+            bf.seek(0);cf.seek(0);before=cf.read(rootstart*512)
+            assert before==bf.read(rootstart*512),'bootloader/boot partition changed'
+            bf.seek(rootend);cf.seek(rootend);assert bf.read()==cf.read(),'source trailer changed'
+            cf.seek(bootstart*512);fat=fat_files(cf.read(bootlen*512))
+        else:
+            # x86/64 image: GPT + grub/PARTUUID boot, no FAT/U-Boot/DTB parsing to do — just make sure
+            # we never touched anything outside the ext4 root partition (ESP, BIOS-boot, GPT tables,
+            # and the backup GPT header/entries this base image keeps at the very end of the disk).
+            rootend=rootstart*512+3096576*512  # root partition length, sectors, from this base image's GPT
+            bf.seek(0);cf.seek(0);before=cf.read(rootstart*512)
+            assert before==bf.read(rootstart*512),'boot region (GPT/ESP/grub) changed'
+            bf.seek(rootend);cf.seek(rootend);assert bf.read()==cf.read(),'backup GPT/trailer changed'
+    if args.target=='arm':
+        for name,kind in [('BOOT.SCR',6),('UIMAGE',2)]:legacy_image(fat[name],kind)
+        assert fat['DTB'][:4]==b'\xd0\x0d\xfe\xed' and b'xunlong,orangepi-one\0' in fat['DTB'],'wrong board DTB'
+        assert b'root=PARTUUID=${uuid}' in fat['BOOT.SCR'],'boot root reference changed'
     offset=f'{candidate}?offset={rootstart*512}'
     subprocess.run(['e2fsck','-fn',offset],check=True)
     with tempfile.TemporaryDirectory(prefix='vendo5-image-verify-') as tmp:
@@ -68,12 +83,21 @@ def main():
         for item in entries:
             actual=pathlib.Path(tmp)/item['dest'].removeprefix('/opt/')
             assert actual.is_file() and actual.read_bytes()==pathlib.Path(item['src']).read_bytes(),f'bad shipped file: {item["dest"]}'
-        for src,imagepath in [('etc/init.d/vendo5','/etc/init.d/vendo5'),('etc-overlay/etc/vendo5-netdetect.sh','/etc/vendo5-netdetect.sh'),('etc-overlay/etc/vendo5-firewall.nft','/etc/vendo5-firewall.nft'),('etc-overlay/etc/vendo5-nginx.locations','/soft/config/nginx.locations'),('etc-overlay/etc/init.d/firewall','/etc/init.d/firewall')]+[(f'etc-overlay/etc/config/{n}',f'/etc/config/{n}') for n in ['network','dhcp','firewall']]:
+        shared=[('etc/init.d/vendo5','/etc/init.d/vendo5'),('etc-overlay/etc/vendo5-firewall.nft','/etc/vendo5-firewall.nft'),('etc-overlay/etc/vendo5-nginx.locations','/soft/config/nginx.locations'),('etc-overlay/etc/init.d/firewall','/etc/init.d/firewall')]+[(f'etc-overlay/etc/config/{n}',f'/etc/config/{n}') for n in ['dhcp','firewall']]
+        if args.target=='arm':
+            shared+=[('etc-overlay/etc/vendo5-netdetect.sh','/etc/vendo5-netdetect.sh'),('etc-overlay/etc/config/network','/etc/config/network')]
+        for src,imagepath in shared:
             target=pathlib.Path(tmp)/'config-check';target.unlink(missing_ok=True);dump(candidate,imagepath,target)
             assert target.read_bytes()==pathlib.Path(src).read_bytes(),f'bad config: {imagepath}'
         network=pathlib.Path(tmp)/'config-check';network.unlink(missing_ok=True);dump(candidate,'/etc/config/network',network)
-        assert b"option device 'br-lan'" in network.read_bytes() and b"option ipaddr '10.0.0.1'" in network.read_bytes(),'LAN is not br-lan at 10.0.0.1'
-        assert b'vlan' not in network.read_bytes().lower(),'VLAN config remains in the main network config'
+        assert b"option name 'br-lan'" in network.read_bytes() and b"option ipaddr '10.0.0.1'" in network.read_bytes(),'LAN is not br-lan at 10.0.0.1'
+        if args.target=='arm':
+            assert b'vlan' not in network.read_bytes().lower(),'VLAN config remains in the main network config'
+        else:
+            # x86 target is the vendor's own switch-equipped box: network is deliberately left as
+            # shipped (VLAN ports into br-lan), not overwritten — just confirm we didn't touch it.
+            base_network=pathlib.Path(tmp)/'base-network';dump(base,'/etc/config/network',base_network)
+            assert network.read_bytes()==base_network.read_bytes(),'network config changed from the vendor original'
         service=subprocess.check_output(['debugfs','-R','stat /etc/init.d/vendo5',offset],stderr=subprocess.DEVNULL,text=True)
         assert '0755' in service,'service not executable'
         rc=subprocess.check_output(['debugfs','-R','stat /etc/rc.d/S95vendo5',offset],stderr=subprocess.DEVNULL,text=True)
