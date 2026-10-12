@@ -14,6 +14,7 @@ const { createNotifications } = require('./lib/store/notifications');
 const { createLicence } = require('./lib/licence');
 const { createMainLog } = require('./lib/system/mainlog');
 const { createStats } = require('./lib/system/stats');
+const { createWatchdog } = require('./lib/system/watchdog');
 const { createSessions } = require('./lib/wire/session');
 const { createMainHandlers } = require('./lib/wire/main');
 const { createNavHandlers } = require('./lib/wire/nav');
@@ -91,6 +92,7 @@ const restart = () => { if (process.env.VENDO5_SUPERVISED === '1') setTimeout(()
 
 const session = createSessionStore(sessionFile);
 session.load();
+const notifications = createNotifications({ file: path.join(stateDir, 'notification.json') });
 
 // shortcut: no-op shell-out for firewall/arp when VENDO5_FIREWALL_CMD=noop
 // (used by the smoke test, which has no real nft/ip environment). Real
@@ -198,7 +200,7 @@ try {
       stats,
       passthrough: createPassthrough({ runCommand, reboot: () => runCommand(['reboot']), systemInfo: stats.systemInfo, net }),
       mainlog,
-      notifications: createNotifications({ file: path.join(stateDir, 'notification.json') }),
+      notifications,
       licence,
       account,
       save: () => session.save(),
@@ -323,6 +325,24 @@ if (admin) {
   const shaper = createShaper({ runCommand, wan, sessions: session, arp, file: path.join(stateDir, 'limits.nft'), save: () => session.save(), log,
     onCap: (mac) => { admin.money.endSession(mac); admin.mainlog.write('system', `Data cap reached: session of ${mac} ended`); admin.clientLog.write(mac, 'Data cap reached'); } });
   setInterval(() => { try { shaper.tick(); } catch (e) { log('error', 'bandwidth limit pass failed', { error: e.message }); } }, 2000).unref();
+}
+
+// Internet/LAN watchdog. Off OpenWrt (a laptop) there is no br-lan to look after, so only the ping/freeze part runs.
+{
+  const nodeFs = require('node:fs');
+  const { execFile } = require('node:child_process');
+  const onOpenWrt = nodeFs.existsSync('/etc/openwrt_release');
+  const exec = (argv) => new Promise((ok, fail) => execFile(argv[0], argv.slice(1), { timeout: 15000 }, (e, out) => (e ? fail(e) : ok(out))));
+  const watchdog = createWatchdog({
+    exec,
+    linkExists: (dev) => !onOpenWrt || nodeFs.existsSync(`/sys/class/net/${dev}`),
+    sessions: session,
+    firewall,
+    notifications,
+    mainlog: admin ? admin.mainlog : { write: (c, text) => log('info', text) },
+    save: () => session.save(),
+  });
+  setInterval(() => { watchdog.tick().catch((e) => log('error', 'watchdog pass failed', { error: e.message })); }, 30000).unref();
 }
 
 setInterval(() => {
