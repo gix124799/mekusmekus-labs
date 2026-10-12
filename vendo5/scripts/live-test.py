@@ -82,10 +82,11 @@ def main():
     seed = {M1: {'mac': M1, 'creditPesos': 2, 'expiresAt': now + 10 * 60000, 'startedAt': now - 90000},
             M2: {'mac': M2, 'creditPesos': 1, 'expiresAt': now + 5 * 60000, 'startedAt': now - 30000}}
     work = tempfile.mkdtemp(dir=OUT)
-    os.makedirs(f'{work}/gpio/gpio17')
-    for f in ('export', 'unexport', 'gpio17/direction', 'gpio17/edge'):
+    for pin in (11, 12):
+        os.makedirs(f'{work}/gpio/gpio{pin}')
+    for f in ('export', 'unexport', 'gpio11/direction', 'gpio12/direction', 'gpio12/edge'):
         open(f'{work}/gpio/{f}', 'w').close()
-    open(f'{work}/gpio/gpio17/value', 'w').write('0')
+    open(f'{work}/gpio/gpio12/value', 'w').write('0')
     json.dump(seed, open(f'{work}/sessions.json', 'w'))
     full = {a: {'read': True, 'write': True} for a in ('vouchers', 'credits', 'cvused', 'sales', 'ticket')}
     os.makedirs(f'{work}/state', exist_ok=True)
@@ -311,7 +312,7 @@ def main():
             r = pd.execute_async_script("var done=arguments[arguments.length-1],s=io();var got=null;s.on('@portal-20',function(m){got=m});"
                                         "s.emit('@portal-13',{},function(a){window.__a13=a;setTimeout(function(){done(JSON.stringify(a))},100)});")
             check('Insert Coin answers Insert with the countdown', json.loads(r).get('message') == 'Insert', r)
-            open(f'{work}/gpio/gpio17/value', 'w').write('1')
+            open(f'{work}/gpio/gpio12/value', 'w').write('1')
             coin = until(lambda: pd.execute_script("return window.__coin||null"), 0.1)
             time.sleep(1.5)
             info = json.loads(pd.execute_async_script("var done=arguments[arguments.length-1];io().emit('@portal-2',null,function(a){done(JSON.stringify(a))})"))

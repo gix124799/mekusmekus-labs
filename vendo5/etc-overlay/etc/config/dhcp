@@ -6,23 +6,49 @@
 # the firewall layer (dstnat, see etc/vendo5-firewall.nft), which works
 # regardless of DNS.
 
-config dnsmasq
+config dnsmasq 'main'
 	option domainneeded '1'
+	option boguspriv '1'
+	option filterwin2k '0'
 	option localise_queries '1'
 	option rebind_protection '1'
+	option rebind_localhost '1'
 	option local '/lan/'
 	option domain 'lan'
 	option expandhosts '1'
+	option nonegcache '0'
+	option cachesize '1000'
 	option authoritative '1'
 	option readethers '1'
-	option leasefile '/tmp/dhcp.leases'
+	list interface 'br-lan'
+	option leasefile '/mnt/wifi5/dhcp.leases'
+	option resolvfile '/tmp/resolv.conf.d/resolv.conf.auto'
+	option nonwildcard '1'
+	option localservice '1'
+	option ednspacket_max '1232'
 
+# the original's lan pool: 10.0.0.2 and 8190 addresses (a /19), 72 h leases, this router as gateway and DNS
 config dhcp 'lan'
+	option instance 'main'
 	option interface 'lan'
+	option leasetime '72h'
 	option start '2'
-	option limit '252'
-	option leasetime '12h'
+	option limit '8190'
+	list dhcp_option '3,10.0.0.1'
+	list dhcp_option '6,10.0.0.1,8.8.8.8,8.8.4.4'
 
 config dhcp 'wan'
+	option instance 'main'
 	option interface 'wan'
 	option ignore '1'
+
+# Captive DNS (the original's port-90 resolver): unpaid clients' port-53 queries are redirected here (see
+# vendo5-firewall.nft) and every name answers 10.0.0.1, so any URL a phone/laptop tries lands on the portal and the
+# OS connectivity probes see it. Paid clients never reach it. No DHCP: the lan/wan sections above belong to 'main'.
+config dnsmasq 'captive'
+	option port '90'
+	option noresolv '1'
+	option localservice '0'
+	option nonwildcard '1'
+	list interface 'br-lan'
+	list address '/#/10.0.0.1'

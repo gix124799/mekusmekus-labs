@@ -5,9 +5,10 @@ from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.common.by import By
 root = os.getcwd(); W = tempfile.mkdtemp(dir=root + '/build')
-os.makedirs(W + '/gpio/gpio17'); os.makedirs(W + '/cfg')
-for f in ('export', 'gpio17/direction', 'gpio17/edge'): open(f'{W}/gpio/{f}', 'w').close()
-open(W + '/gpio/gpio17/value', 'w').write('0')
+for pin in (11, 12): os.makedirs(f'{W}/gpio/gpio{pin}')
+os.makedirs(W + '/cfg')
+for f in ('export', 'unexport', 'gpio11/direction', 'gpio12/direction', 'gpio12/edge'): open(f'{W}/gpio/{f}', 'w').close()
+open(W + '/gpio/gpio12/value', 'w').write('0')
 for f in os.listdir('config'): shutil.copy('config/' + f, W + '/cfg')
 env = dict(os.environ, VENDO5_CONFIG_DIR=W+'/cfg', VENDO5_SESSION_FILE=W+'/s.json', VENDO5_GPIO_BASE=W+'/gpio', VENDO5_PORTAL_PORT='3998', VENDO5_FIREWALL_CMD='noop', VENDO5_ARP_FAKE_MAC='aa:bb:cc:dd:ee:02')
 app = subprocess.Popen(['node', 'main.js'], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); time.sleep(1.5)
@@ -20,7 +21,7 @@ try:
     res['client loads, offline'] = d.find_element(By.ID, 'title-status').text.lower() == 'offline'
     d.find_element(By.ID, 'client-insert-coin').click(); time.sleep(.5)
     res['INSERT COIN shows toast'] = 'Insert your coin' in d.find_element(By.CLASS_NAME, 'toast').text
-    open(W + '/gpio/gpio17/value', 'w').write('1'); time.sleep(3.2)
+    open(W + '/gpio/gpio12/value', 'w').write('1'); time.sleep(3.2)
     res['client shows Online + time'] = d.find_element(By.ID, 'title-status').text.lower() == 'online' and 'm' in d.find_element(By.ID, 'client-duration').text
     d.save_screenshot(W + '/client.png'); shutil.copy(W + '/client.png', root + '/build/shot-client.png')
     d.get(P + '/admin'); res['admin shows login'] = bool(d.find_elements(By.ID, 'admin-login-form'))

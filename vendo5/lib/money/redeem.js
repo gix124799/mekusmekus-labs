@@ -1,3 +1,4 @@
+const { cleanData } = require('./limits');
 const LOCK_AFTER = 5;
 const LOCK_MS = 5 * 60000;
 
@@ -29,6 +30,7 @@ function createMoney({ vouchers, credits, access, clientLog, ratePesosPerMinute 
     const wellFormed = /^[A-Z0-9]{3,32}$/.test(code);
     const v = wellFormed ? vouchers.get(code) : null;
     if (!v && wellFormed && credits && credits.get(code)) return redeemCredit(mac, credits.get(code));
+    if (!v && wellFormed) { const moved = moveSession(mac, code); if (moved) return moved; }
     if (!v) {
       miss(mac);
       log(`Invalid voucher ${code.slice(0, 32)} from ${mac}`);
@@ -96,10 +98,39 @@ function createMoney({ vouchers, credits, access, clientLog, ratePesosPerMinute 
     return { ok: true, message: 'Success' };
   }
 
-  function pause(mac) {
+  // A phone that changed its MAC (random MAC): its resume code takes the time along.
+  // null when the code belongs to no live session (then it is just a wrong code).
+  function moveSession(mac, code) {
+    const t = now();
+    const from = sessions.findByCode(code, t);
+    if (!from) return null;
+    if (from === mac) return { ok: false, message: 'This code is already running on this device' };
+    if (!sessions.move(from, mac, t)) return { ok: false, message: 'This device already has time' };
+    const s = sessions.getSession(mac);
+    if (!s.paused && !s.disconnected) {
+      try {
+        firewall.allow(mac);
+      } catch (e) {
+        sessions.move(mac, from, t);
+        log(`Firewall refused ${mac}: ${e.message}`);
+        return { ok: false, message: 'Could not connect you, try again' };
+      }
+    } else {
+      try { firewall.revoke(mac); } catch { /* a replaced free trial may have let it through */ }
+    }
+    try { firewall.revoke(from); } catch { /* not in the allowed set */ }
+    save();
+    log(`Session moved from ${from} to ${mac} (resume code)`);
+    clog(mac, `Session moved here from ${from}`);
+    clog(from, `Session moved to another device (${mac}) with the resume code`);
+    wrong.delete(mac);
+    return { ok: true, message: 'Success' };
+  }
+
+  function pause(mac, opts) {
     if (!mac) return { ok: false, message: 'Device not recognised' };
     const before = sessions.getSession(mac) ? structuredClone(sessions.getSession(mac)) : null;
-    const r = sessions.pause(mac, now());
+    const r = sessions.pause(mac, now(), opts);
     if (!r.ok) return { ok: false, message: r.reason };
     try {
       firewall.revoke(mac);
@@ -130,6 +161,9 @@ function createMoney({ vouchers, credits, access, clientLog, ratePesosPerMinute 
     return { ok: true, message: 'Resumed' };
   }
 
+  // Admin dashboard pause: any running session, no pause spent.
+  const adminPause = (mac) => pause(mac, { force: true });
+
   // End a client's session for good (admin Remove): the firewall may never have known the MAC.
   function endSession(mac) {
     if (typeof mac !== 'string' || !mac) return false;
@@ -154,7 +188,7 @@ function createMoney({ vouchers, credits, access, clientLog, ratePesosPerMinute 
     const t = now();
     const before = sessions.getSession(mac) ? structuredClone(sessions.getSession(mac)) : null;
     const type = Number(p.type) === 1 ? 'pausable' : 'consumable';
-    sessions.addTime(mac, p.duration * 1000, { type, upload: p.upload, download: p.download, max_data_limit: p.max_data_limit > 0 ? p.max_data_limit : undefined, pauselimit: type === 'pausable' && p.pauselimit > 0 ? p.pauselimit : undefined, validityHours: type === 'pausable' ? p.validity : undefined }, t);
+    sessions.addTime(mac, p.duration * 1000, { type, upload: p.upload, download: p.download, max_data_limit: cleanData(p.max_data_limit), pauselimit: type === 'pausable' && p.pauselimit > 0 ? p.pauselimit : undefined, validityHours: type === 'pausable' ? p.validity : undefined }, t);
     if (!before || !before.paused) {
       try {
         firewall.allow(mac);
@@ -169,7 +203,7 @@ function createMoney({ vouchers, credits, access, clientLog, ratePesosPerMinute 
     return { ok: true, message: 'Success' };
   }
 
-  return { redeemVoucher, pause, resume, endSession, createSession, blocked };
+  return { redeemVoucher, moveSession, pause, adminPause, resume, endSession, createSession, blocked };
 }
 
 module.exports = { createMoney, LOCK_AFTER, LOCK_MS };

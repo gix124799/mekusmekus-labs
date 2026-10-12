@@ -73,7 +73,6 @@ test('an upload over the limit is refused and leaves no file behind', async () =
   const { Readable } = require('node:stream');
   const raw = path.join(dir, 'raw');
   assert.equal(await bodyToFile(Readable.from([Buffer.alloc(600), Buffer.alloc(600)]), raw, 1000), null);
-  await new Promise((r) => setTimeout(r, 50));
   assert.equal(fs.existsSync(raw), false);
 });
 

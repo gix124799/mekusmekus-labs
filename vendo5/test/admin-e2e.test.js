@@ -33,8 +33,11 @@ async function boot(extraEnv = {}) {
   const sessionFile = path.join(root, 'sessions.json');
   fs.writeFileSync(sessionFile, JSON.stringify({ [MAC]: { mac: MAC, creditPesos: 2, expiresAt: Date.now() + 600000, startedAt: Date.now() - 60000 } }));
   const gpio = path.join(root, 'gpio');
-  fs.mkdirSync(path.join(gpio, 'gpio17'), { recursive: true });
-  for (const f of ['export', 'unexport', 'gpio17/value', 'gpio17/direction', 'gpio17/edge']) fs.writeFileSync(path.join(gpio, f), '0');
+  for (const pin of [11, 12]) {
+    fs.mkdirSync(path.join(gpio, `gpio${pin}`), { recursive: true });
+    for (const field of ['value', 'direction', ...(pin === 12 ? ['edge'] : [])]) fs.writeFileSync(path.join(gpio, `gpio${pin}`, field), '0');
+  }
+  for (const f of ['export', 'unexport']) fs.writeFileSync(path.join(gpio, f), '0');
   const p = spawn(process.execPath, [MAIN], { env: { ...process.env, VENDO5_CONFIG_DIR: path.join(root, 'cfg'), VENDO5_DEFAULTS_DIR: path.join(__dirname, '..', 'config'), VENDO5_SESSION_FILE: sessionFile, VENDO5_STATE_DIR: stateDir, VENDO5_UI_DIR: UI, VENDO5_GPIO_BASE: gpio, VENDO5_PORTAL_PORT: '0', VENDO5_FIREWALL_CMD: 'noop', ...extraEnv } });
   let out = '';
   p.stdout.on('data', (c) => { out += c; });
@@ -151,8 +154,8 @@ test('a coin is written to the system log the admin reads', async () => {
   const s = await boot({ VENDO5_ARP_FAKE_MAC: 'aa:bb:cc:dd:ee:77' });
   try {
     assert.equal((await req(s.port, 'POST', '/api/pay-intent', { body: '{}', type: 'application/json' })).status, 200);
-    fs.writeFileSync(path.join(s.gpio, 'gpio17', 'value'), '1');
-    await waitFor(() => s.out(), /firewall allow/);
+    fs.writeFileSync(path.join(s.gpio, 'gpio12', 'value'), '1');
+    await waitFor(() => s.out(), /Coin: 1 peso\(s\) credited to aa:bb:cc:dd:ee:77/);
     const { sock } = await login(s.port, 'admin', 'admin');
     const files = await ask(sock, '@nav-645798');
     const text = await ask(sock, '@nav-636547', files[0]);
@@ -169,8 +172,8 @@ test('a coin follows the rate table the admin set, and earns the points the rule
     assert.equal(add.config.rate.length, 1);
     assert.equal(await ask(sock, '@nav-0092734', { action: 'SET', path: 'vendo', coin: 1, point: 2.5 }), '');
     assert.equal((await req(s.port, 'POST', '/api/pay-intent', { body: '{}', type: 'application/json' })).status, 200);
-    fs.writeFileSync(path.join(s.gpio, 'gpio17', 'value'), '1');
-    await waitFor(() => s.out(), /firewall allow/);
+    fs.writeFileSync(path.join(s.gpio, 'gpio12', 'value'), '1');
+    await waitFor(() => fs.readFileSync(s.sessionFile, 'utf8'), /aa:bb:cc:dd:ee:55/);
     const saved = JSON.parse(fs.readFileSync(s.sessionFile, 'utf8'))['aa:bb:cc:dd:ee:55'];
     assert.ok(Math.abs(saved.expiresAt - Date.now() - 300000) < 5000, '1 peso = 300 seconds from the table, not the flat rate');
     assert.deepEqual([saved.type, saved.upload, saved.download, saved.pauselimit], ['pausable', '2M', '3M', 2]);

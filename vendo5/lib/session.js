@@ -1,4 +1,9 @@
 const fs = require('node:fs');
+const crypto = require('node:crypto');
+
+// A code the customer can type on a phone that changed its MAC: no 0/O/1/I to misread.
+const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const newCode = () => Array.from({ length: 8 }, () => ALPHABET[crypto.randomInt(ALPHABET.length)]).join('');
 
 function createSessionStore(filePath) {
   let sessions = {}; // mac -> { mac, creditPesos, expiresAt, startedAt }
@@ -18,7 +23,9 @@ function createSessionStore(filePath) {
       return; // corrupt file: start empty, not an error
     }
     for (const [mac, sess] of Object.entries(parsed)) {
-      if (live(sess, now)) sessions[mac] = sess;
+      if (!live(sess, now)) continue;
+      if (!sess.resumeCode) sess.resumeCode = newCode(); // saved before resume codes existed
+      sessions[mac] = sess;
     }
   }
 
@@ -51,7 +58,7 @@ function createSessionStore(filePath) {
       existing.creditPesos += pesos;
       existing.expiresAt += minutes * 60000;
     } else {
-      sessions[mac] = { mac, creditPesos: pesos, expiresAt: now + minutes * 60000, startedAt: now };
+      sessions[mac] = { mac, creditPesos: pesos, expiresAt: now + minutes * 60000, startedAt: now, resumeCode: newCode() };
     }
     return sessions[mac];
   }
@@ -79,7 +86,7 @@ function createSessionStore(filePath) {
   function addTime(mac, ms, meta = {}, now = Date.now()) {
     const cur = sessions[mac];
     const fresh = !cur || !live(cur, now);
-    const s = fresh ? { mac, creditPesos: 0, expiresAt: now, startedAt: now, type: meta.type || 'consumable' } : cur;
+    const s = fresh ? { mac, creditPesos: 0, expiresAt: now, startedAt: now, type: meta.type || 'consumable', resumeCode: newCode() } : cur;
     if (s.paused) s.remainingMs += ms;
     else s.expiresAt = (fresh ? now : s.expiresAt) + ms;
     s.creditPesos += meta.price || 0;
@@ -91,24 +98,71 @@ function createSessionStore(filePath) {
   }
 
   // Pause freezes the remaining time; only a pausable session with pauses left can pause.
-  function pause(mac, now = Date.now()) {
+  // force (admin): any live session, and no pause is spent.
+  function pause(mac, now = Date.now(), { force = false } = {}) {
     const s = sessions[mac];
     if (!s || !live(s, now) || s.paused) return { ok: false, reason: 'No active session' };
-    if (s.type !== 'pausable') return { ok: false, reason: 'This session cannot be paused' };
-    if (s.pauselimit !== undefined && s.pauselimit <= 0) return { ok: false, reason: 'No pauses left' };
+    if (!force && s.type !== 'pausable') return { ok: false, reason: 'This session cannot be paused' };
+    if (!force && s.pauselimit !== undefined && s.pauselimit <= 0) return { ok: false, reason: 'No pauses left' };
     s.remainingMs = Math.max(0, s.expiresAt - now);
     s.paused = true;
-    if (s.pauselimit !== undefined) s.pauselimit -= 1;
+    if (!force && s.pauselimit !== undefined) s.pauselimit -= 1;
     return { ok: true, session: s };
   }
 
   function resume(mac, now = Date.now()) {
     const s = sessions[mac];
     if (!s || !s.paused || !live(s, now)) return { ok: false, reason: 'Not paused' };
+    if (s.outage) return { ok: false, reason: 'No internet right now, your time is saved' }; // the watchdog thaws it
     s.expiresAt = now + s.remainingMs;
     delete s.paused;
     delete s.remainingMs;
     return { ok: true, session: s };
+  }
+
+  // Internet outage: every running session stops its clock like a pause, marked so thaw resumes only these.
+  function freeze(now = Date.now()) {
+    const macs = [];
+    for (const [mac, s] of Object.entries(sessions)) {
+      if (s.paused || !live(s, now)) continue;
+      s.remainingMs = Math.max(0, s.expiresAt - now);
+      s.paused = true;
+      s.outage = true;
+      macs.push(mac);
+    }
+    return macs;
+  }
+
+  function thaw(now = Date.now()) {
+    const macs = [];
+    for (const [mac, s] of Object.entries(sessions)) {
+      if (!s.outage) continue;
+      s.expiresAt = now + s.remainingMs;
+      delete s.paused;
+      delete s.remainingMs;
+      delete s.outage;
+      macs.push(mac);
+    }
+    return macs;
+  }
+
+  // The live session a resume code belongs to. Not voucher codes: they are printed and can be short to guess.
+  function findByCode(code, now = Date.now()) {
+    for (const [mac, s] of Object.entries(sessions)) {
+      if (live(s, now) && s.resumeCode === code) return mac;
+    }
+    return null;
+  }
+
+  // A phone that came back with a new MAC: the whole session goes with it. A free trial the phone took on its
+  // new MAC meanwhile is replaced; any other running session there is not.
+  function move(from, to, now = Date.now()) {
+    const s = sessions[from];
+    if (from === to || !s || !live(s, now)) return false;
+    if (sessions[to] && live(sessions[to], now) && !sessions[to].trial) return false;
+    sessions[to] = { ...s, mac: to };
+    delete sessions[from];
+    return true;
   }
 
   // Undo helper for a failed firewall call: put a session back exactly as it was (null removes it).
@@ -127,7 +181,7 @@ function createSessionStore(filePath) {
     return { ...sessions };
   }
 
-  return { load, save, addCredit, addTime, pause, resume, restore, extend, getSession, isActive, expireDue, revoke, all };
+  return { load, save, addCredit, addTime, pause, resume, freeze, thaw, findByCode, move, restore, extend, getSession, isActive, expireDue, revoke, all };
 }
 
 module.exports = { createSessionStore };

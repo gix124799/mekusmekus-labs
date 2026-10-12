@@ -1,6 +1,7 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const clientIp = require('./client-ip');
 
 const PAY_INTENT_TTL_MS = 10000;
 const THEME_DIR = path.join(__dirname, '..', 'public', 'theme');
@@ -144,39 +145,44 @@ function reply(res, r) {
   res.end(JSON.stringify(r));
 }
 
-function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, chat, portal }) {
-  let pendingPayer = null; // { mac, at }
+function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, chat, portal, subvendo }) {
+  const pending = new Map(); // vendo id -> { mac, at, ttl }: who is inserting coins there
 
   // Ruling (code-review fix pass): don't clear on a successful consume —
   // touch (refresh) the window instead, so back-to-back coin pulses for
   // the same payer (plan's own Review Focus #1) keep finding them. Only
   // an actual TTL lapse with no intervening pulse frees the slot.
-  function consumePendingPayer(now = Date.now()) {
-    if (!pendingPayer) return null;
-    const { mac, at, ttl } = pendingPayer;
-    if (now - at > ttl) {
-      pendingPayer = null;
+  function consumePendingPayer(now = Date.now(), vendo = 'main') {
+    const p = pending.get(vendo);
+    if (!p) return null;
+    if (now - p.at > p.ttl) {
+      pending.delete(vendo);
       return null;
     }
-    pendingPayer = { mac, at: now, ttl };
-    return mac;
+    pending.set(vendo, { ...p, at: now });
+    return p.mac;
   }
+
+  // Is someone waiting to pay at this vendo? A look only: the window is not refreshed.
+  const hasPendingPayer = (now = Date.now(), vendo = 'main') => { const p = pending.get(vendo); return !!p && now - p.at <= p.ttl; };
 
   // A different MAC may not steal an already-active pending-payer slot;
   // the same MAC always refreshes its own window.
-  function setPendingPayer(mac, now = Date.now(), ttl = PAY_INTENT_TTL_MS) {
-    if (pendingPayer && pendingPayer.mac !== mac && now - pendingPayer.at <= pendingPayer.ttl) {
-      return false;
-    }
-    pendingPayer = { mac, at: now, ttl };
+  function setPendingPayer(mac, now = Date.now(), ttl = PAY_INTENT_TTL_MS, vendo = 'main') {
+    const p = pending.get(vendo);
+    if (p && p.mac !== mac && now - p.at <= p.ttl) return false;
+    pending.set(vendo, { mac, at: now, ttl });
     return true;
   }
 
+  // The popup closed: the slot stays theirs graceMs more (a coin already falling), then the next phone may tap.
+  function releasePendingPayer(mac, now = Date.now(), graceMs = 0, vendo = 'main') {
+    const p = pending.get(vendo);
+    if (p && p.mac === mac) pending.set(vendo, { mac, at: now, ttl: graceMs });
+  }
+
   function clientMac(req) {
-    // dual-stack server binds to '::' by default; real IPv4 clients arrive
-    // as '::ffff:a.b.c.d' and `ip neigh show` has no entry for that form.
-    const ip = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
-    return arp.ipToMac(ip);
+    return arp.ipToMac(clientIp(req.socket.remoteAddress, req.headers));
   }
 
   function remainingSecondsFor(mac, now = Date.now()) {
@@ -197,6 +203,13 @@ function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, ch
       if (portal.serveStatic(req, res)) return;
     }
 
+    // Sub-vendo ESP8266s (signed, see lib/subvendo.js); before clientMac() since the handler looks the ESP up itself.
+    if (subvendo && req.method === 'POST' && req.url === '/subvendo/poll') {
+      const ip = clientIp(req.socket.remoteAddress, req.headers);
+      readJsonBody(req).then((b) => reply(res, subvendo(b, ip)));
+      return;
+    }
+
     // /admin and the admin frontend's static files; before clientMac(), which shells out to `ip neigh`.
     if (adminRoutes && adminRoutes(req, res)) return;
 
@@ -212,6 +225,21 @@ function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, ch
     // Voucher, pause and resume go through the money module; without it these routes do not exist.
     if (money && req.method === 'POST' && req.url === '/api/redeem') {
       readJsonBody(req).then((b) => reply(res, money.redeemVoucher(mac, b.code)));
+      return;
+    }
+    // The portal page's own script keeps the resume code in the browser; a phone back with a new random MAC
+    // posts it and gets its time back without typing anything (the Logs-page code stays the manual way).
+    if (money && req.method === 'POST' && req.url === '/api/resume-code') {
+      readJsonBody(req).then((b) => {
+        const live = (m) => { const s = m && session.getSession(m); return s && (s.paused || s.expiresAt > Date.now()) ? s : null; };
+        let moved = false;
+        if (mac && !live(mac) && typeof b.code === 'string' && /^[A-Z0-9]{8}$/.test(b.code)) {
+          const r = money.moveSession(mac, b.code);
+          moved = !!r && r.ok;
+        }
+        const s = live(mac);
+        reply(res, { code: (s && s.resumeCode) || '', moved });
+      });
       return;
     }
     if (money && req.method === 'POST' && (req.url === '/api/pause' || req.url === '/api/resume')) {
@@ -253,7 +281,7 @@ function createServer({ session, arp, ratePesosPerMinute, adminRoutes, money, ch
     res.end(clientPage());
   });
 
-  return { server, consumePendingPayer, setPendingPayer };
+  return { server, consumePendingPayer, setPendingPayer, hasPendingPayer, releasePendingPayer };
 }
 
 module.exports = { createServer };

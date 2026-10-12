@@ -1,4 +1,6 @@
+const { formatClientLogLine } = require('../store/clientlog');
 const { timeForPesos } = require('../money/rates');
+const { dataBytes } = require('../money/limits');
 
 const asObj = (v) => (v && typeof v === 'object' ? v : {});
 const KEYS = Array.from({ length: 46 }, (_, i) => `@portal-${i}`);
@@ -8,7 +10,7 @@ const decode = (t) => String(t).replace(/&amp;/g, '&').replace(/&lt;/g, '<').rep
 
 // The customer portal's events. The original page emits `keys[n]` for operation n; n is fixed by the page, the names
 // are ours (the table goes to the page in the `wisft` global). Every handler answers for the device behind the socket.
-function createPortalHandlers({ sessions, money, ops, wallet, clients, settings, clientLog, chat, push, media, vouchers, sales, arp, listenCoin, stopCoin = () => {}, version, now = Date.now, ratePesosPerMinute, mainlog }) {
+function createPortalHandlers({ sessions, money, ops, wallet, clients, settings, clientLog, chat, push, media, vouchers, sales, arp, listenCoin, stopCoin = () => {}, version, now = Date.now, ratePesosPerMinute, mainlog, vendoOf = () => 'main' }) {
   const guarded = (fallback, handler) => ({ fallback, handler });
   const cfg = () => settings.read();
   const noDevice = 'Device not recognised';
@@ -22,8 +24,8 @@ function createPortalHandlers({ sessions, money, ops, wallet, clients, settings,
     const live = !!s && (s.paused || s.expiresAt > t);
     const out = {
       internet: true, interface: 'br-lan', id: mac || '', mac: mac || '', address: (mac && ipOf(mac)) || ctx.ip || '', credit: c.credit || 0, point: c.point || 0,
-      status: !live ? 'Disconnected' : s.paused ? 'Paused' : s.disconnected ? 'Disconnected' : 'Connected', now: t, trial: false, lastinsertedvendo: 'main', max_data_limit: (s && s.max_data_limit) || 0, start_date: (s && s.startedAt) || 0, total_download_data: 0, total_upload_data: 0,
-      ulimit: (s && s.upload) || '', dlimit: (s && s.download) || '', RXRate: 0, TXRate: 0, upload: 0, download: 0, code: (s && s.code) || '', resduration: '00:00:00',
+      status: !live ? 'Disconnected' : s.paused ? 'Paused' : s.disconnected ? 'Disconnected' : 'Connected', now: t, trial: false, lastinsertedvendo: 'main', max_data_limit: dataBytes(s && s.max_data_limit), start_date: (s && s.startedAt) || 0, total_download_data: (s && s.usedDown) || 0, total_upload_data: (s && s.usedUp) || 0,
+      ulimit: (s && s.upload) || '', dlimit: (s && s.download) || '', RXRate: 0, TXRate: 0, upload: 0, download: 0, code: (s && (s.code || s.resumeCode)) || '', resduration: '00:00:00',
     };
     out.validity = 0;
     if (live) {
@@ -40,7 +42,16 @@ function createPortalHandlers({ sessions, money, ops, wallet, clients, settings,
   const rateCfg = () => cfg().main.config;
 
   return {
-    [K(0)]: guarded('', (_p, ctx) => (ctx.mac ? clientLog.read(ctx.mac).data.replace(/\n/g, '\n') : '')),
+    // Logs page; while the device has time it ends with the code that takes the time to a new MAC.
+    [K(0)]: guarded('', (_p, ctx) => {
+      if (!ctx.mac) return '';
+      const logs = clientLog.read(ctx.mac).data;
+      const s = sessions.getSession(ctx.mac);
+      const live = !!s && (s.paused || s.expiresAt > now());
+      if (!live || !s.resumeCode) return logs;
+      const hint = formatClientLogLine(new Date(now()), `Resume code: ${s.resumeCode} - if your phone changes its MAC, enter this code in the voucher box to get your time back`);
+      return `${logs}${logs && !logs.endsWith('\n') ? '\n' : ''}${hint}\n`;
+    }),
     [K(2)]: guarded({}, (_p, ctx) => info(ctx.mac, ctx)),
 
     [K(3)]: guarded('Error', (_p, ctx) => {
@@ -89,7 +100,13 @@ function createPortalHandlers({ sessions, money, ops, wallet, clients, settings,
       const s = sessions.getSession(ctx.mac);
       return { message: s && s.paused ? 'Resume' : 'Insert', rate: { rates: rateCfg().rate, type: rateCfg().set.type, rtype: rateCfg().set.type }, countdown: r.countdown, countdownMax: cfg().main.countdownMax, expiry: r.expiry, credit: wallet.balance(ctx.mac), incoin: 0 };
     }),
-    [K(14)]: guarded({ vendoList: {} }, () => { const m = cfg().main; return { vendoList: { main: { id: 'main', name: m.name, insertbtn: m.insertbtn, countdownMax: m.countdownMax } }, lastinsertedvendo: 'main' }; }),
+    [K(14)]: guarded({ vendoList: {} }, (_p, ctx) => {
+      const id = vendoOf(ctx.mac);
+      const s = cfg();
+      const v = id === 'main' ? s.main : (s.sub || {})[id];
+      if (!v) return { vendoList: {}, lastinsertedvendo: 'main' };
+      return { vendoList: { [id]: { id, name: v.name, insertbtn: s.main.insertbtn, countdownMax: v.countdownMax } }, lastinsertedvendo: id };
+    }),
     [K(15)]: guarded({ rates: [] }, () => ({ rates: rateCfg().rate.filter((r) => r.show !== false), type: rateCfg().set.type, lastinsertedvendo: 'main' })),
     [K(17)]: guarded([], () => ['main']),
     [K(18)]: guarded({ rates: [], rtype: 0 }, () => ({ rates: rateCfg().rate, rtype: rateCfg().set.type })),

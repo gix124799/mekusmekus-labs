@@ -191,3 +191,34 @@ test('themes: licence note, the two shipped themes, set/unset, and the portal sc
   assert.deepEqual(r.call('@nav-453648', { action: 'SET2' }), { success: 'Theme disabled' });
   assert.equal(r.call('@nav-453648', { action: 'GET2' }), '');
 });
+
+test('sub-vendo section: requests, accept, rename, describe, countdown, remove, online', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { createVendos } = require('../lib/vendos');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'v5ws-')), 'settings.json');
+  const settings = createSettings({ file, deviceName: 'ETHYLNET', coinPin: 17 });
+  const vendos = createVendos({ settings });
+  const h = createSettingsHandlers({ settings, vendos, deviceName: 'ETHYLNET', mainlog: { write: () => {} } });
+  const call = (id, p) => h[id].handler(p, {});
+  vendos.request('A1B2C3', { mac: 'aa:00:00:00:00:01', iface: 'vlan10', ip: '10.1.0.50' });
+  let r = call('@nav-22125');
+  assert.deepEqual(r.request, [{ id: 'A1B2C3', name: 'SubVendo-A1B2C3', mac: 'aa:00:00:00:00:01' }]);
+  assert.deepEqual(Object.keys(r.vendoInfo.sub), ['main']);
+  call('@nav-22126', { action: 'edit-key', key: 'ABCDEFGHIJKLMN' }); // a 14-char key is required before any accept (signatures)
+  call('@nav-22126', { action: 'accept-sub-vendo', id: 'A1B2C3' });
+  call('@nav-22126', { action: 'edit-name-sub-vendo', id: 'sub1', name: 'Kanto Vendo' });
+  call('@nav-22126', { action: 'edit-description-sub-vendo', id: 'sub1', description: 'near the store' });
+  call('@nav-22126', { action: 'set-coundown', id: 'sub1', countdownMax: 30 });
+  vendos.seen('sub1', { version: '1.0.0', interface: 'vlan10' });
+  r = call('@nav-22125');
+  assert.deepEqual(r.request, []);
+  const s = r.vendoInfo.sub.sub1;
+  assert.deepEqual([s.name, s.description, s.countdownMax, s.mac, s.license], ['Kanto Vendo', 'near the store', 30, 'aa:00:00:00:00:01', 'Offline']);
+  assert.deepEqual(r.vendoOnline.sub1, { version: '1.0.0', interface: 'vlan10' });
+  assert.ok(r.vendoOnline.main);
+  assert.equal(settings.read().main.name, 'ETHYLNET', 'renaming a sub-vendo leaves main alone');
+  call('@nav-22126', { action: 'remove-sub-vendo', id: 'sub1' });
+  assert.deepEqual(Object.keys(call('@nav-22125').vendoInfo.sub), ['main']);
+});

@@ -45,6 +45,15 @@ test('client IP is normalized before ARP lookup (IPv6-mapped IPv4 strips the ::f
   assert.ok(!calls[0].startsWith('::ffff:'), `expected a stripped IPv4, got ${calls[0]}`);
 });
 
+test('portal HTTP trusts the forwarded client IP only through the local reverse proxy', async () => {
+  const { arp, calls } = recordingArp('m1');
+  const { server } = createServer({ session: fakeSession(false), arp, ratePesosPerMinute: 1 });
+  const port = await listen(server);
+  await request(port, 'GET', '/', { headers: { 'x-real-ip': '10.0.0.8' } });
+  server.close();
+  assert.ok(calls.includes('10.0.0.8'));
+});
+
 // Real-frontend ruling: GET / now serves the real app's single SPA shell
 // (same for paid/unpaid), matching the actual decrypted frontend's design
 // — status is conveyed by client-side JS polling /api/status, never by
@@ -57,6 +66,7 @@ test('GET / always serves the real page shell with the real insert-coin button',
   assert.equal(res.status, 200);
   assert.match(res.body, /insert coin/i);
   assert.match(res.body, /id="client-insert-coin"/);
+  assert.match(res.body, /\/theme\/banner\.jpg/);
   server.close();
 });
 
@@ -193,4 +203,58 @@ test('with no admin routes configured the portal still answers (admin unavailabl
   const r = await request(port, 'GET', '/admin');
   assert.match(r.body, /client-insert-coin/);
   server.close();
+});
+
+test('hasPendingPayer looks without refreshing the window', () => {
+  const { hasPendingPayer, setPendingPayer } = createServer({ session: fakeSession(false), arp: fakeArp('m1'), ratePesosPerMinute: 1 });
+  assert.equal(hasPendingPayer(1000), false);
+  setPendingPayer('m1', 1000, 5000);
+  assert.equal(hasPendingPayer(5000), true);
+  assert.equal(hasPendingPayer(6001), false, 'peeking at 5000 did not extend the 5 s window');
+});
+
+test('each vendo has its own pending payer: busy at one vendo does not block another', () => {
+  const { setPendingPayer, consumePendingPayer, hasPendingPayer } = createServer({ session: fakeSession(false), arp: fakeArp('m1'), ratePesosPerMinute: 1 });
+  assert.equal(setPendingPayer('m1', 1000, 5000, 'main'), true);
+  assert.equal(setPendingPayer('m2', 1000, 5000, 'main'), false, 'one phone at a time per vendo');
+  assert.equal(setPendingPayer('m2', 1000, 5000, 'sub1'), true, 'another vendo is free');
+  assert.equal(hasPendingPayer(2000, 'sub1'), true);
+  assert.equal(consumePendingPayer(2000, 'sub1'), 'm2');
+  assert.equal(consumePendingPayer(2000), 'm1', 'main is the default');
+});
+
+test('closing the popup frees the vendo after the grace time, not the whole countdown', () => {
+  const { setPendingPayer, releasePendingPayer, consumePendingPayer } = createServer({ session: fakeSession(false), arp: fakeArp('m1'), ratePesosPerMinute: 1 });
+  setPendingPayer('m1', 1000, 62000, 'sub1');
+  releasePendingPayer('m2', 2000, 1000, 'sub1'); // not the payer: nothing happens
+  assert.equal(setPendingPayer('m2', 2500, 62000, 'sub1'), false);
+  releasePendingPayer('m1', 3000, 1000, 'sub1');
+  assert.equal(consumePendingPayer(3500, 'sub1'), 'm1', 'a coin already falling is still theirs');
+  assert.equal(setPendingPayer('m2', 3600, 62000, 'sub1'), false);
+  assert.equal(setPendingPayer('m2', 4600, 62000, 'sub1'), true, 'free 1 s after the last activity');
+});
+
+test('POST /api/resume-code moves the time to this phone when it has none, and returns its current code', async () => {
+  const { createSessionStore } = require('../lib/session');
+  const sessions = createSessionStore('/nonexistent/s.json');
+  sessions.load();
+  sessions.addCredit('old', 5, 1, Date.now());
+  const code = sessions.getSession('old').resumeCode;
+  const moves = [];
+  const money = {
+    blocked: () => false,
+    moveSession: (mac, c) => { moves.push([mac, c]); return c === code && sessions.move('old', mac) ? { ok: true } : null; },
+  };
+  const { server } = createServer({ session: sessions, arp: fakeArp('new'), ratePesosPerMinute: 1, money });
+  await new Promise((r) => server.listen(0, r));
+  const post = (body) => new Promise((resolve) => {
+    const req = http.request({ port: server.address().port, path: '/api/resume-code', method: 'POST', headers: { 'Content-Type': 'application/json' } }, (res) => { let b = ''; res.on('data', (c) => (b += c)); res.on('end', () => resolve(JSON.parse(b))); });
+    req.end(JSON.stringify(body));
+  });
+  try {
+    assert.deepEqual(await post({ code }), { code, moved: true });
+    assert.deepEqual(await post({ code: 'AAAAAAAA' }), { code, moved: false }, 'a phone with time is not moved onto');
+    assert.equal(moves.length, 1);
+    assert.deepEqual(await post({}), { code, moved: false });
+  } finally { server.close(); }
 });

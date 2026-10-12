@@ -151,3 +151,131 @@ test('revoke does not call save() itself (caller\'s responsibility)', () => {
   const after = fs.readFileSync(file, 'utf8');
   assert.equal(before, after); // file unchanged -- revoke alone never touched disk
 });
+
+test('forced pause works on a consumable session and does not spend pauselimit', () => {
+  const s = createSessionStore(tmpFile());
+  s.load();
+  s.addTime('m1', 60000, { type: 'consumable' }, 1000);
+  assert.equal(s.pause('m1', 2000).ok, false, 'a customer cannot pause a consumable session');
+  assert.equal(s.pause('m1', 2000, { force: true }).ok, true);
+  assert.equal(s.getSession('m1').remainingMs, 59000);
+  s.resume('m1', 5000);
+  s.addTime('m2', 60000, { type: 'pausable', pauselimit: 1 }, 1000);
+  s.pause('m2', 2000, { force: true });
+  assert.equal(s.getSession('m2').pauselimit, 1);
+});
+
+test('freeze stops the clock of running sessions; thaw resumes only those', () => {
+  const s = createSessionStore(tmpFile());
+  s.load();
+  s.addTime('run', 60000, {}, 0);
+  s.addTime('mine', 60000, { type: 'pausable' }, 0);
+  s.pause('mine', 10000); // customer pause before the outage: 50000 left
+  assert.deepEqual(s.freeze(20000), ['run']);
+  assert.deepEqual(s.freeze(21000), [], 'freezing twice changes nothing');
+  assert.deepEqual(s.expireDue(500000), [], 'nobody runs out during an outage');
+  s.addCredit('run', 1, 1, 30000); // a coin during the outage: +60000
+  assert.deepEqual(s.thaw(600000), ['run']);
+  assert.equal(s.getSession('run').expiresAt, 600000 + 40000 + 60000);
+  assert.equal(s.getSession('run').outage, undefined);
+  assert.equal(s.getSession('mine').paused, true, 'a customer pause stays paused');
+  assert.equal(s.getSession('mine').remainingMs, 50000);
+  assert.deepEqual(s.thaw(700000), [], 'thaw with nothing frozen is a no-op');
+});
+
+test('an outage-frozen session cannot be resumed by hand (no internet to use it on)', () => {
+  const s = createSessionStore(tmpFile());
+  s.load();
+  s.addTime('m1', 60000, {}, 0);
+  s.freeze(10000);
+  const r = s.resume('m1', 20000);
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /No internet/);
+  assert.equal(s.getSession('m1').paused, true);
+  assert.deepEqual(s.thaw(30000), ['m1']);
+  assert.equal(s.getSession('m1').expiresAt, 30000 + 50000);
+});
+
+test('frozen sessions survive a save and load', () => {
+  const f = tmpFile();
+  const a = createSessionStore(f);
+  a.load();
+  a.addTime('m1', 60000, {}, 0);
+  a.freeze(10000);
+  a.save();
+  const b = createSessionStore(f);
+  b.load(999999999);
+  assert.deepEqual(b.thaw(1000000), ['m1']);
+  assert.equal(b.getSession('m1').expiresAt, 1000000 + 50000);
+});
+
+const CODE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/;
+
+test('every fresh session gets a resume code; topping up keeps it', () => {
+  const s = createSessionStore(tmpFile());
+  s.load();
+  s.addCredit('m1', 1, 1, 0);
+  const code = s.getSession('m1').resumeCode;
+  assert.match(code, CODE);
+  s.addCredit('m1', 1, 1, 1000);
+  assert.equal(s.getSession('m1').resumeCode, code);
+  s.addTime('m2', 60000, { code: 'VOUCH1' }, 0);
+  assert.match(s.getSession('m2').resumeCode, CODE);
+  assert.notEqual(s.getSession('m2').resumeCode, code);
+});
+
+test('sessions saved before resume codes existed get one on load', () => {
+  const f = tmpFile();
+  fs.writeFileSync(f, JSON.stringify({ m1: { mac: 'm1', creditPesos: 1, expiresAt: 9e15, startedAt: 0 } }));
+  const s = createSessionStore(f);
+  s.load(1000);
+  assert.match(s.getSession('m1').resumeCode, CODE);
+});
+
+test('findByCode finds a live session by resume code, not an expired one', () => {
+  const s = createSessionStore(tmpFile());
+  s.load();
+  s.addTime('m1', 60000, { code: 'VOUCH1' }, 0);
+  const rc = s.getSession('m1').resumeCode;
+  assert.equal(s.findByCode(rc, 1000), 'm1');
+  assert.equal(s.findByCode('NOPE2345', 1000), null);
+  assert.equal(s.findByCode(rc, 61000), null, 'expired');
+});
+
+test('move carries the whole session to the new MAC', () => {
+  const s = createSessionStore(tmpFile());
+  s.load();
+  s.addTime('old', 60000, { upload: '1M' }, 0);
+  s.pause('old', 10000, { force: true });
+  const before = s.getSession('old');
+  assert.equal(s.move('old', 'new', 20000), true);
+  assert.equal(s.getSession('old'), undefined);
+  const now = s.getSession('new');
+  assert.equal(now.mac, 'new');
+  assert.equal(now.remainingMs, 50000);
+  assert.equal(now.paused, true);
+  assert.equal(now.upload, '1M');
+  assert.equal(now.resumeCode, before.resumeCode);
+});
+
+test('move refuses when the source is not live or the target already has time', () => {
+  const s = createSessionStore(tmpFile());
+  s.load();
+  assert.equal(s.move('ghost', 'new', 0), false);
+  s.addTime('a', 60000, {}, 0);
+  s.addTime('b', 60000, {}, 0);
+  assert.equal(s.move('a', 'b', 1000), false);
+  assert.equal(s.move('a', 'a', 1000), false);
+  assert.equal(s.move('a', 'c', 61000), false, 'expired');
+});
+
+test('only the resume code finds a session (a printed voucher code does not), and a trial can be replaced', () => {
+  const s = createSessionStore(tmpFile());
+  s.load();
+  s.addTime('m1', 60000, { code: 'VOUCH1' }, 0);
+  assert.equal(s.findByCode('VOUCH1', 1000), null);
+  s.addTime('t1', 60000, {}, 0);
+  s.getSession('t1').trial = true;
+  assert.equal(s.move('m1', 't1', 1000), true);
+  assert.equal(s.getSession('t1').code, 'VOUCH1');
+});

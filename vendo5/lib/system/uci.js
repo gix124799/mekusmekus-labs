@@ -34,13 +34,13 @@ function seed() {
   return {
     network: {
       loopback: s('interface', 'loopback', { device: 'lo', proto: 'static', ipaddr: '127.0.0.1', netmask: '255.0.0.0' }),
-      lan: s('interface', 'lan', { device: 'br-lan', proto: 'static', ipaddr: '192.168.1.1', netmask: '255.255.255.0' }),
+      lan: s('interface', 'lan', { device: 'br-lan', proto: 'static', ipaddr: '10.0.0.1', netmask: '255.255.224.0' }),
       wan: s('interface', 'wan', { device: 'eth0', proto: 'dhcp' }),
       br_lan: s('device', 'br_lan', { name: 'br-lan', type: 'bridge', ports: ['eth1'] }),
     },
     dhcp: {
       dnsmasq: s('dnsmasq', 'dnsmasq', { domainneeded: '1', localise_queries: '1', local: '/lan/', domain: 'lan', expandhosts: '1', authoritative: '1', readethers: '1', leasefile: '/tmp/dhcp.leases' }),
-      lan: s('dhcp', 'lan', { interface: 'lan', start: '100', limit: '150', leasetime: '12h', dhcpv4: 'server' }),
+      lan: s('dhcp', 'lan', { interface: 'lan', start: '2', limit: '8190', leasetime: '72h', dhcpv4: 'server' }),
       wan: s('dhcp', 'wan', { interface: 'wan', ignore: '1' }),
     },
     wireless: {

@@ -7,7 +7,7 @@ const { loadConfig, getConfig } = require('../lib/config');
 
 const GOOD = {
   'network.json': { lan_interface: 'br-lan' },
-  'vendo.json': { coin_pin: 17, pulse_value_pesos: 1, pesos_per_minute: 1 },
+  'vendo.json': { coin_pin: 12, relay_pin: 11, relay_pin_active: 1, pulse_value_pesos: 1, pesos_per_minute: 1 },
   'licensing.json': { mode: 'offline' },
 };
 function mk(files) {
@@ -22,7 +22,9 @@ test('getConfig before loadConfig throws', () => {
 
 test('happy path merges by filename stem and caches', () => {
   const cfg = loadConfig(mk(GOOD), '/nonexistent');
-  assert.equal(cfg.vendo.coin_pin, 17);
+  assert.equal(cfg.vendo.coin_pin, 12);
+  assert.equal(cfg.vendo.relay_pin, 11);
+  assert.equal(cfg.vendo.relay_pin_active, 1);
   assert.equal(cfg.network.lan_interface, 'br-lan');
   assert.strictEqual(getConfig(), cfg);
 });
@@ -30,6 +32,11 @@ test('happy path merges by filename stem and caches', () => {
 test('missing required key names file and key', () => {
   const d = mk({ ...GOOD, 'vendo.json': {} });
   assert.throws(() => loadConfig(d, '/nonexistent'), /vendo\.json.*coin_pin/);
+});
+
+test('invalid main coin relay pin or active level is rejected', () => {
+  assert.throws(() => loadConfig(mk({ ...GOOD, 'vendo.json': { ...GOOD['vendo.json'], relay_pin: 256 } }), '/nonexistent'), /relay_pin.*0 to 255/);
+  assert.throws(() => loadConfig(mk({ ...GOOD, 'vendo.json': { ...GOOD['vendo.json'], relay_pin_active: 2 } }), '/nonexistent'), /relay_pin_active.*0 or 1/);
 });
 
 test('missing required file is an error', () => {
@@ -54,7 +61,7 @@ test('missing dir: defaults are copied then loaded', () => {
   const target = path.join(os.tmpdir(), 'v5cfg-new-' + process.pid);
   fs.rmSync(target, { recursive: true, force: true });
   const cfg = loadConfig(target, defaults);
-  assert.equal(cfg.vendo.coin_pin, 17);
+  assert.equal(cfg.vendo.coin_pin, 12);
   assert.ok(fs.existsSync(path.join(target, 'vendo.json')));
 });
 

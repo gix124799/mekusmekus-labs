@@ -79,7 +79,7 @@ test('wrong password: the form post bounces back to the login page and no shell 
     const { cookie, reply } = await browserLogin(r.port, 'admin', 'wrong');
     assert.deepEqual(reply, { login: false });
     assert.equal((await req(r.port, 'POST', '/admin', { cookie, body: '', type: 'application/x-www-form-urlencoded' })).headers.location, '/admin');
-    assert.ok((await req(r.port, 'GET', '/admin?page=dashboard', { cookie })).body.includes('Sign In|'));
+    assert.match((await req(r.port, 'GET', '/admin?page=dashboard', { cookie })).body, /<h3[^>]*>MEKUSMEKUS<\/h3>/);
   } finally { r.stop(); }
 });
 
@@ -99,7 +99,7 @@ test('a socket that connects without the page cookie cannot log in a browser tha
     const stranger = await open(r.port, 'vendo5_sid=forged');
     assert.equal(await ask(stranger, '@main-48931'), '', 'no session, no token');
     stranger.close();
-    assert.ok((await req(r.port, 'GET', '/admin?page=dashboard', { cookie })).body.includes('Sign In|'));
+    assert.match((await req(r.port, 'GET', '/admin?page=dashboard', { cookie })).body, /<h3[^>]*>MEKUSMEKUS<\/h3>/);
   } finally { r.stop(); }
 });
 
@@ -109,6 +109,6 @@ test('logout from the shell ends the session', async () => {
     const { cookie } = await browserLogin(r.port, 'admin', 'secret99');
     assert.equal((await req(r.port, 'GET', '/admin?page=dashboard', { cookie })).status, 200);
     assert.equal((await req(r.port, 'POST', '/admin?', { cookie, body: '{"logout":true}', type: 'application/json' })).status, 200);
-    assert.ok((await req(r.port, 'GET', '/admin?page=dashboard', { cookie })).body.includes('Sign In|'));
+    assert.match((await req(r.port, 'GET', '/admin?page=dashboard', { cookie })).body, /<h3[^>]*>MEKUSMEKUS<\/h3>/);
   } finally { r.stop(); }
 });

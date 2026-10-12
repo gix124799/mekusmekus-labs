@@ -10,7 +10,10 @@ const emu = () => createUci({ runCommand: () => { throw new Error('no ubus'); },
 test('get: whole config, one section, one option, by type; missing things say "Not found"', () => {
   const u = emu();
   assert.ok(Object.keys(u.call('get', { config: 'network' }).values).includes('lan'));
-  assert.equal(u.call('get', { config: 'network', section: 'lan' }).values.ipaddr, '192.168.1.1');
+  assert.equal(u.call('get', { config: 'network', section: 'lan' }).values.ipaddr, '10.0.0.1');
+  assert.equal(u.call('get', { config: 'network', section: 'lan' }).values.netmask, '255.255.224.0');
+  assert.equal(u.call('get', { config: 'dhcp', section: 'lan' }).values.start, '2');
+  assert.equal(u.call('get', { config: 'network', type: 'device' }).values.br_lan.name, 'br-lan');
   assert.equal(u.call('get', { config: 'network', section: 'lan', option: 'proto' }).value, 'static');
   assert.deepEqual(Object.keys(u.call('get', { config: 'network', type: 'device' }).values), ['br_lan']);
   assert.deepEqual(u.call('get', { config: 'network', section: 'nope' }), { stdout: '', stderr: 'Command failed: Not found' });

@@ -1,3 +1,4 @@
+const { cleanData } = require('./limits');
 // The coin rate table: { set: { type }, rate: [{ coin (pesos), minute (seconds, the page's name for it), show, vendoset }] }.
 // vendoset is the session profile that denomination grants: { type, upload, download, validity, pauselimit, max_data_limit, notsametype }.
 const SPEED = /^\d+(K|M|G|T)$/;
@@ -55,7 +56,7 @@ function cleanRow({ config, minute, coin }) {
     if (Number(v.validity) > 0) set.validity = Number(v.validity);
     if (Number(v.pauselimit) > 0) set.pauselimit = Number(v.pauselimit);
   }
-  if (Number(v.max_data_limit) > 0) set.max_data_limit = Number(v.max_data_limit);
+  if (cleanData(v.max_data_limit) !== undefined) set.max_data_limit = cleanData(v.max_data_limit);
   set.notsametype = Number(v.notsametype) === 1 ? 1 : 0;
   if (typeof v.discription === 'string') set.discription = v.discription.slice(0, 80);
   return { coin: c, minute: m, show: true, vendoset: set };

@@ -22571,11 +22571,19 @@ code {
 /* Cards */
 
 .card {
+	border: 1px solid rgba(0, 191, 255, 0.55);
 	border-radius: 0.25rem;
 }
 
 .card .card-body {
 	padding: 1.75rem 1.5625rem;
+	border: 1px solid rgba(0, 191, 255, 0.55);
+	border-radius: 0.5rem;
+}
+
+.card .card-footer {
+	border: 1px solid rgba(0, 191, 255, 0.55);
+	border-radius: 0.5rem;
 }
 
 .card .card-body+.card-body {
@@ -28282,8 +28290,9 @@ div.tagsinput span.tag a {
 .navbar .navbar-brand-wrapper .navbar-brand.brand-logo-mini img {
 	max-width: 160px;
 	width: 160px;
-    height: 48px;
-    margin: auto;
+	height: 48px;
+	margin: auto;
+	object-fit: contain;
 }
 
 .navbar .navbar-menu-wrapper {

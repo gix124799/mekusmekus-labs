@@ -18,8 +18,9 @@ page = sys.argv[1] if len(sys.argv) > 1 else 'dashboard'
 extra_js = sys.argv[2] if len(sys.argv) > 2 else ''
 work = tempfile.mkdtemp(prefix='vendo5-probe-')
 now = int(time.time() * 1000)
-os.makedirs(f'{work}/gpio/gpio17')
-for f in ('export', 'unexport', 'gpio17/direction', 'gpio17/edge', 'gpio17/value'):
+for pin in (11, 12):
+    os.makedirs(f'{work}/gpio/gpio{pin}')
+for f in ('export', 'unexport', 'gpio11/direction', 'gpio12/direction', 'gpio12/edge', 'gpio12/value'):
     open(f'{work}/gpio/{f}', 'w').write('0')
 json.dump({'aa:bb:cc:dd:ee:99': {'mac': 'aa:bb:cc:dd:ee:99', 'creditPesos': 5, 'expiresAt': now + 3600000, 'startedAt': now - 60000, 'type': 'pausable', 'code': 'LIVE2345', 'pauselimit': 2, 'upload': '1M', 'download': '2M'},
            '11:22:33:44:55:66': {'mac': '11:22:33:44:55:66', 'creditPesos': 1, 'expiresAt': now + 600000, 'startedAt': now - 60000}}, open(f'{work}/sessions.json', 'w'))

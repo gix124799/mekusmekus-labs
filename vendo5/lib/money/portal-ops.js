@@ -1,9 +1,10 @@
 // What the customer portal's buttons do beyond vouchers: free trial, disconnect/connect back, credit codes into the
 // wallet, redeeming points, the spin wheel. Each returns what the original page reads (a status string or an object).
-function createPortalOps({ sessions, firewall, clients, credits, sales, settings, access, mainlog, clientLog, save = () => {}, now = Date.now, random = Math.random }) {
+function createPortalOps({ sessions, firewall, clients, credits, sales, settings, access, mainlog, clientLog, save = () => {}, now = Date.now, random = Math.random, trialMaxPerHour = Infinity }) {
   const clog = (mac, t) => { if (clientLog) clientLog.write(mac, t); };
   const sys = (t) => { if (mainlog) mainlog.write('system', t); };
   const cfg = () => settings.read();
+  const trials = []; // times of the trials given in the last hour (all devices)
   const live = (mac) => { const s = sessions.getSession(mac); return s && (s.paused || s.expiresAt > now()) ? s : null; };
 
   return {
@@ -13,10 +14,16 @@ function createPortalOps({ sessions, firewall, clients, credits, sales, settings
       if (live(mac)) return 'You are already connected';
       const ms = Math.round((Number(t.minutes) || 0) * 60000) || (Number(t.duration) || 0) * 1000;
       if (!(ms > 0)) return 'Free trial is not available';
+      // Random MACs make the per-device trial flag easy to dodge, so the vendo as a whole has an hourly limit.
+      // shortcut: counted in memory, a restart resets it; persist it if owners see abuse around reboots.
+      while (trials.length && now() - trials[0] >= 3600000) trials.shift();
+      if (trials.length >= trialMaxPerHour) return 'Free trial limit reached, try again later';
       const before = sessions.getSession(mac) ? structuredClone(sessions.getSession(mac)) : null;
       sessions.addTime(mac, ms, { price: 0, type: 'consumable', ...(t.upload ? { upload: t.upload } : {}), ...(t.download ? { download: t.download } : {}) }, now());
       try { firewall.allow(mac); } catch { sessions.restore(mac, before); return 'Could not connect you, try again'; }
       clients.markTrial(mac);
+      sessions.getSession(mac).trial = true;
+      trials.push(now());
       save();
       sys(`Free trial given to ${mac}`); clog(mac, 'Free trial');
       return 'Connected';

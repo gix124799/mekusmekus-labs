@@ -5,7 +5,7 @@ const macOf = (item) => (typeof item === 'string' ? item : asObj(item).mac);
 
 // Handlers for the admin shell, dashboard and logs pages (@nav-*). Each is (payload, ctx) => reply and
 // every one is guarded: no logged-in session, no answer. Replies copy the shapes the original page reads.
-function createNavHandlers({ pppoe, sessions, firewall, arp, stats, passthrough, mainlog, notifications, licence, account, reset, now = Date.now, save = () => {} }) {
+function createNavHandlers({ pppoe, sessions, firewall, money, arp, stats, passthrough, mainlog, notifications, licence, account, reset, now = Date.now, save = () => {} }) {
   const log = (text) => mainlog.write('system', text);
   const guarded = (fallback, handler) => ({ guard: true, fallback, handler });
 
@@ -73,7 +73,9 @@ function createNavHandlers({ pppoe, sessions, firewall, arp, stats, passthrough,
 
     '@nav-232003': guarded({}, () => {
       const l = licence.licence();
-      return { status: 'activated', code: l.serial, level: 'Unlimited', hotspot: l.hotspot, pppoe: l.pppoe, vendo: 'Yes', eload: 'Yes', movie: l.movie ? 'Yes' : 'No', serial: l.serial, expiration: l.expiration };
+      // eload is 'No' here (not a licence field - purchases are genuinely refused, cloud-only by design; this
+      // just stops the dialog claiming a working feature that isn't). Everything else stays unconditionally on.
+      return { status: 'activated', code: l.serial, level: 'Unlimited', hotspot: l.hotspot, pppoe: l.pppoe, vendo: 'Yes', eload: 'No', movie: l.movie ? 'Yes' : 'No', serial: l.serial, expiration: l.expiration };
     }),
     '@nav-1452357': guarded('', () => Buffer.from(licence.licence().serial).toString('base64')),
     '@nav-14433223': guarded({}, () => ({ success: false, message: 'This device runs offline: no activation is needed' })),
@@ -87,8 +89,17 @@ function createNavHandlers({ pppoe, sessions, firewall, arp, stats, passthrough,
       log(`Admin extended ${p.voucher} by ${p.duration}s`);
       return 'Success';
     }),
-    // vendo5 sessions cannot be paused, so there is nothing to disconnect without ending them.
-    '@nav-22313': guarded('Error', () => 'Error'),
+    // Pause / resume a client from the dashboard (admin override: any session, no pause spent).
+    '@nav-22313': guarded('Error', (payload) => {
+      const mac = resolveMac(payload);
+      const s = typeof mac === 'string' && sessions.getSession(mac);
+      if (!s || !money) return 'Error';
+      const wasPaused = !!s.paused;
+      const r = wasPaused ? money.resume(mac) : money.adminPause(mac);
+      if (!r.ok) return 'Error';
+      log(`Admin ${wasPaused ? 'resumed' : 'paused'} ${mac}`);
+      return 'Success';
+    }),
     '@nav-44232': guarded('Error', (payload) => {
       const mac = resolveMac(payload);
       if (!remove(mac)) return 'Error';
